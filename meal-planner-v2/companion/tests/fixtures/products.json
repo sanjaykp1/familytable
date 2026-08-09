@@ -1,0 +1,16 @@
+{
+  "query": "chicken breast",
+  "page": 1,
+  "hasMore": false,
+  "items": [
+    {
+      "id": "fixture-product-101",
+      "name": "Chicken breast fillets",
+      "subtitle": "Approx. 580 g",
+      "priceNok": 94.9,
+      "unitPriceNok": 163.62,
+      "unitPriceUnit": "kg",
+      "availability": "available"
+    }
+  ]
+}

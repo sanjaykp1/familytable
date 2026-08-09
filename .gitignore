@@ -1,0 +1,22 @@
+# macOS and editor files
+.DS_Store
+.idea/
+.vscode/
+
+# Local environment and logs
+.env
+.env.*
+!.env.example
+*.log
+npm-debug.log*
+family-table-backup-*.json
+
+# Dependencies, generated output, and test artifacts
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Local planning and legacy prototype files
+/HANDOVER.md
+/family-meal-planner_2.html

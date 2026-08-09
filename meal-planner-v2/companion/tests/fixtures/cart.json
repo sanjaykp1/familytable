@@ -1,0 +1,11 @@
+{
+  "items": [
+    {
+      "productId": "fixture-product-900",
+      "name": "Whole milk",
+      "quantity": 1,
+      "linePriceNok": 24.9
+    }
+  ],
+  "totalNok": 24.9
+}

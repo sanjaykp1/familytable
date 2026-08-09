@@ -1,0 +1,17 @@
+{
+  "name": "The Family Table",
+  "short_name": "Family Table",
+  "description": "A calm, local-first weekly meal planner for families.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f5ef",
+  "theme_color": "#6f2434",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
