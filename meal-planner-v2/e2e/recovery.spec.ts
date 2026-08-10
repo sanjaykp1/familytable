@@ -66,7 +66,7 @@ test('recovers Home Stock, shopping, priority, and stock-only plan from a JSON b
       .getByRole('button', { name: 'Remove use soon' }),
   ).toBeVisible();
   await page.getByRole('button', { name: 'To buy' }).click();
-  await expect(page.getByText('bananas')).toBeVisible();
+  await expect(page.getByText('bananas', { exact: true })).toBeVisible();
 
   await page.goto('/#/settings');
   const downloadPromise = page.waitForEvent('download');
@@ -94,7 +94,7 @@ test('recovers Home Stock, shopping, priority, and stock-only plan from a JSON b
       .getByRole('button', { name: 'Remove use soon' }),
   ).toBeVisible();
   await page.getByRole('button', { name: 'To buy' }).click();
-  await expect(page.getByText('bananas')).toBeVisible();
+  await expect(page.getByText('bananas', { exact: true })).toBeVisible();
   await page.goto('/#/plan');
   await expect(page.getByLabel('Dinner for Mon')).not.toHaveValue('');
 });
