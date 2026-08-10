@@ -23,6 +23,13 @@ async function addHomeStockItem(page: Page, item: StockItem) {
   await expect(page.getByRole('heading', { name: item.name })).toBeVisible();
 }
 
+async function dismissToasts(page: Page) {
+  const dismissButtons = page.getByRole('button', { name: 'Dismiss message' });
+  while (await dismissButtons.count()) {
+    await dismissButtons.first().click();
+  }
+}
+
 test('recovers Home Stock, shopping, priority, and stock-only plan from a JSON backup', async ({
   page,
 }, testInfo) => {
@@ -53,6 +60,7 @@ test('recovers Home Stock, shopping, priority, and stock-only plan from a JSON b
   await page.goto('/#/plan');
   await page.getByRole('button', { name: 'Cook from what I have' }).click();
   await expect(page.getByRole('heading', { name: 'Lemon salmon & new potatoes' })).toBeVisible();
+  await dismissToasts(page);
   await page.getByRole('button', { name: 'Plan qualifying dinners' }).click();
   await expect(page.getByLabel('Dinner for Mon')).not.toHaveValue('');
 
