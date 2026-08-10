@@ -2,36 +2,84 @@ import {
   Database,
   Download,
   HardDrive,
+  ShieldCheck,
   Moon,
   RotateCcw,
   Sun,
   Upload,
   type LucideIcon,
 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../../app/AppProvider';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Modal } from '../../components/ui/Modal';
 import { PageHeader } from '../../components/ui/PageHeader';
 import type { ThemePreference } from '../../domain/types';
+import {
+  browserStorageCapabilities,
+  type PersistentStorageStatus,
+} from '../../repositories/browserStorageCapabilities';
 import { WeatherSettings } from './WeatherSettings';
 
 export function SettingsPage() {
-  const { state, storageError, updatePreferences, exportData, importData, resetData, notify } =
-    useApp();
+  const {
+    state,
+    storageError,
+    backupReminderNeeded,
+    updatePreferences,
+    exportData,
+    recordBackup,
+    importData,
+    resetData,
+    dismissBackupReminder,
+    notify,
+  } = useApp();
   const inputRef = useRef<HTMLInputElement>(null);
   const [showReset, setShowReset] = useState(false);
+  const [persistentStorage, setPersistentStorage] = useState<PersistentStorageStatus | null>(null);
+  const [requestingPersistence, setRequestingPersistence] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    void browserStorageCapabilities.checkPersistence().then((status) => {
+      if (mounted) setPersistentStorage(status);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const checkPersistentStorage = async () => {
+    setPersistentStorage(await browserStorageCapabilities.checkPersistence());
+  };
 
   const downloadBackup = () => {
-    const blob = new Blob([exportData()], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `family-table-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    notify('Backup downloaded.', 'success');
+    const backedUpAt = new Date().toISOString();
+    try {
+      const payload = exportData(backedUpAt);
+      JSON.parse(payload);
+      const blob = new Blob([payload], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `family-table-backup-${backedUpAt.slice(0, 10)}.json`;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      recordBackup(backedUpAt);
+      notify('Backup download started.', 'success');
+    } catch {
+      notify('The backup could not be prepared for download.', 'error');
+    }
+  };
+
+  const requestPersistentStorage = async () => {
+    setRequestingPersistence(true);
+    try {
+      setPersistentStorage(await browserStorageCapabilities.requestPersistence());
+    } finally {
+      setRequestingPersistence(false);
+    }
   };
 
   const readBackup = async (file: File) => {
@@ -51,7 +99,7 @@ export function SettingsPage() {
   ];
 
   return (
-    <div className="page-stack settings-page">
+    <div className="page-stack page-stack--compact settings-page">
       <PageHeader
         eyebrow="Settings"
         title="Your table, your device."
@@ -61,6 +109,22 @@ export function SettingsPage() {
       {storageError ? (
         <div className="storage-warning" role="alert">
           {storageError}
+        </div>
+      ) : null}
+
+      {backupReminderNeeded ? (
+        <div className="backup-reminder" role="status">
+          <div>
+            <strong>{state.lastBackupAt ? 'Time for another backup' : 'Create your first backup'}</strong>
+            <p>
+              {state.lastBackupAt
+                ? 'Your last successful backup is more than seven days old.'
+                : 'A JSON backup is the portable way to recover your household data.'}
+            </p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={dismissBackupReminder}>
+            Dismiss for now
+          </Button>
         </div>
       ) : null}
 
@@ -132,6 +196,56 @@ export function SettingsPage() {
         <Card className="settings-card settings-card--wide">
           <header>
             <span className="settings-card__icon">
+              <ShieldCheck aria-hidden="true" size={20} />
+            </span>
+            <div>
+              <h2>Browser storage protection</h2>
+              <p>Extra protection against browser eviction, not a replacement for a backup.</p>
+            </div>
+          </header>
+          <div className="storage-protection">
+            {persistentStorage === null ? <p>Checking browser storage protection…</p> : null}
+            {persistentStorage === 'persistent' ? (
+              <p>
+                <strong>Persistent.</strong> This browser has granted extra protection against
+                eviction. Keep exporting backups for portable recovery.
+              </p>
+            ) : null}
+            {persistentStorage === 'not-granted' ? (
+              <>
+                <p>
+                  <strong>Not granted.</strong> Your data still works normally on this device, but
+                  the browser may evict it under storage pressure. Persistent storage reduces that
+                  risk; it is not a backup.
+                </p>
+                <Button onClick={() => void requestPersistentStorage()} disabled={requestingPersistence}>
+                  {requestingPersistence ? 'Requesting protection…' : 'Request persistent storage'}
+                </Button>
+              </>
+            ) : null}
+            {persistentStorage === 'unsupported' ? (
+              <p>
+                <strong>Unsupported.</strong> This browser cannot offer persistent storage here.
+                Your data can still be used normally; export JSON backups regularly.
+              </p>
+            ) : null}
+            {persistentStorage === 'failed' ? (
+              <>
+                <p>
+                  <strong>Could not check protection.</strong> Your data can still be used
+                  normally. Export JSON backups regularly.
+                </p>
+                <Button variant="secondary" onClick={() => void checkPersistentStorage()}>
+                  Check again
+                </Button>
+              </>
+            ) : null}
+          </div>
+        </Card>
+
+        <Card className="settings-card settings-card--wide">
+          <header>
+            <span className="settings-card__icon">
               <HardDrive aria-hidden="true" size={20} />
             </span>
             <div>
@@ -142,7 +256,12 @@ export function SettingsPage() {
           <div className="data-actions">
             <div>
               <strong>Download a backup</strong>
-              <p>Keep a copy before clearing browser data or moving to another device.</p>
+              <p>
+                {state.lastBackupAt
+                  ? `Last successful backup: ${new Date(state.lastBackupAt).toLocaleString()}.`
+                  : 'No successful backup yet.'}{' '}
+                Keep a copy before clearing browser data or moving to another device.
+              </p>
             </div>
             <Button onClick={downloadBackup}>
               <Download aria-hidden="true" size={18} /> Export JSON

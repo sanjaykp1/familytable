@@ -9,6 +9,7 @@ import {
   useState,
 } from 'react';
 import { startOfWeek, toISODateLocal } from '../domain/date';
+import { needsBackupReminder } from '../domain/backup';
 import { RepositoryError } from '../domain/errors';
 import { generateMealPlan, replaceMeal, setMealServings } from '../domain/planner';
 import { createEmptyPlan, createInitialState } from '../domain/seed';
@@ -47,6 +48,7 @@ interface AppContextValue {
   shoppingItems: ShoppingItem[];
   replenishmentSuggestions: ReplenishmentSuggestion[];
   storageError: string | null;
+  backupReminderNeeded: boolean;
   toasts: ToastMessage[];
   goToWeek: (weekStart: string) => void;
   setMeal: (day: DayKey, recipeId: string | null, kind?: MealSlotKind) => void;
@@ -58,7 +60,9 @@ interface AppContextValue {
   markCooked: (day: DayKey) => void;
   markPlanReady: () => void;
   reopenPlan: () => void;
+  clearMealPlan: () => void;
   upsertRecipe: (recipe: Recipe) => void;
+  toggleRecipeFavourite: (recipeId: string) => void;
   deleteRecipe: (recipeId: string) => void;
   rebuildShopping: () => void;
   toggleShoppingItem: (itemId: string) => void;
@@ -77,9 +81,11 @@ interface AppContextValue {
   ) => void;
   resolveShoppingReview: (itemId: string) => void;
   updatePreferences: (patch: Partial<Preferences>) => void;
-  exportData: () => string;
+  exportData: (lastBackupAt?: string) => string;
+  recordBackup: (lastBackupAt: string) => void;
   importData: (serialized: string) => void;
   resetData: () => void;
+  dismissBackupReminder: () => void;
   notify: (message: string, tone?: ToastMessage['tone']) => void;
   dismissToast: (id: string) => void;
 }
@@ -131,6 +137,12 @@ function resetReplenishmentCycle(
   return { ...next, replenishmentSuggestionStatus: undefined };
 }
 
+function retainIndependentShoppingItems(items: ShoppingItem[] | undefined): ShoppingItem[] {
+  return (items ?? []).filter(
+    (item) => item.sources.includes('manual') || item.sources.includes('stock-top-up'),
+  );
+}
+
 export function AppProvider({
   children,
   repository,
@@ -146,6 +158,7 @@ export function AppProvider({
   const [activeWeek, setActiveWeek] = useState(startOfWeek());
   const [storageError, setStorageError] = useState<string | null>(initial.error);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [backupReminderDismissed, setBackupReminderDismissed] = useState(false);
   const skipInitialPersist = useRef(true);
 
   const notify = useCallback((message: string, tone: ToastMessage['tone'] = 'info') => {
@@ -225,7 +238,9 @@ export function AppProvider({
           createEmptyPlan(activeWeek, current.preferences.defaultServings);
         const nextPlan = updater(plan, current);
         const nextShopping = { ...current.shoppingLists };
-        delete nextShopping[activeWeek];
+        const retainedItems = retainIndependentShoppingItems(nextShopping[activeWeek]);
+        if (retainedItems.length) nextShopping[activeWeek] = retainedItems;
+        else delete nextShopping[activeWeek];
         return {
           ...current,
           plans: { ...current.plans, [activeWeek]: nextPlan },
@@ -302,7 +317,9 @@ export function AppProvider({
 
       setState((current) => {
         const nextShopping = { ...current.shoppingLists };
-        delete nextShopping[activeWeek];
+        const retainedItems = retainIndependentShoppingItems(nextShopping[activeWeek]);
+        if (retainedItems.length) nextShopping[activeWeek] = retainedItems;
+        else delete nextShopping[activeWeek];
         return {
           ...current,
           plans: { ...current.plans, [activeWeek]: result.plan },
@@ -374,6 +391,22 @@ export function AppProvider({
     updateActivePlan((plan) => ({ ...plan, status: 'draft', updatedAt: new Date().toISOString() }));
   }, [updateActivePlan]);
 
+  const clearMealPlan = useCallback(() => {
+    setState((current) => {
+      const nextShopping = { ...current.shoppingLists };
+      delete nextShopping[activeWeek];
+      return {
+        ...current,
+        plans: {
+          ...current.plans,
+          [activeWeek]: createEmptyPlan(activeWeek, current.preferences.defaultServings),
+        },
+        shoppingLists: nextShopping,
+      };
+    });
+    notify('Meal plan cleared.', 'success');
+  }, [activeWeek, notify]);
+
   const upsertRecipe = useCallback(
     (recipe: Recipe) => {
       setState((current) => {
@@ -389,6 +422,27 @@ export function AppProvider({
       notify('Recipe saved.', 'success');
     },
     [notify],
+  );
+
+  const toggleRecipeFavourite = useCallback(
+    (recipeId: string) => {
+      const recipe = state.recipes.find((item) => item.id === recipeId);
+      if (!recipe) return;
+      const favourite = !recipe.favourite;
+      setState((current) => ({
+        ...current,
+        recipes: current.recipes.map((item) =>
+          item.id === recipeId ? { ...item, favourite, updatedAt: new Date().toISOString() } : item,
+        ),
+      }));
+      notify(
+        favourite
+          ? `${recipe.name} is now a household favourite.`
+          : `${recipe.name} is no longer a household favourite.`,
+        'success',
+      );
+    },
+    [notify, state.recipes],
   );
 
   const deleteRecipe = useCallback(
@@ -716,9 +770,23 @@ export function AppProvider({
   }, []);
 
   const exportData = useCallback(
-    () => activeRepository.exportData(state),
+    (lastBackupAt?: string) =>
+      activeRepository.exportData(
+        lastBackupAt === undefined ? state : { ...state, lastBackupAt },
+      ),
     [activeRepository, state],
   );
+
+  const recordBackup = useCallback((lastBackupAt: string) => {
+    setState((current) => ({ ...current, lastBackupAt }));
+  }, []);
+
+  const dismissBackupReminder = useCallback(() => {
+    setBackupReminderDismissed(true);
+  }, []);
+
+  const backupReminderNeeded =
+    !backupReminderDismissed && needsBackupReminder(state.lastBackupAt);
 
   const importData = useCallback(
     (serialized: string) => {
@@ -755,6 +823,7 @@ export function AppProvider({
       shoppingItems,
       replenishmentSuggestions,
       storageError,
+      backupReminderNeeded,
       toasts,
       goToWeek,
       setMeal,
@@ -766,7 +835,9 @@ export function AppProvider({
       markCooked,
       markPlanReady,
       reopenPlan,
+      clearMealPlan,
       upsertRecipe,
+      toggleRecipeFavourite,
       deleteRecipe,
       rebuildShopping,
       toggleShoppingItem,
@@ -784,8 +855,10 @@ export function AppProvider({
       resolveShoppingReview,
       updatePreferences,
       exportData,
+      recordBackup,
       importData,
       resetData,
+      dismissBackupReminder,
       notify,
       dismissToast,
     }),
@@ -796,10 +869,13 @@ export function AppProvider({
       addManualShoppingItem,
       adjustHomeStockQuantity,
       archiveHomeStockItem,
+      backupReminderNeeded,
+      clearMealPlan,
       currentPlan,
       deleteRecipe,
       disableReplenishmentRule,
       dismissReplenishmentSuggestion,
+      dismissBackupReminder,
       dismissToast,
       exportData,
       generateWeek,
@@ -810,6 +886,7 @@ export function AppProvider({
       markPlanReady,
       notify,
       planFromStock,
+      recordBackup,
       rebuildShopping,
       replenishmentSuggestions,
       reopenPlan,
@@ -829,6 +906,7 @@ export function AppProvider({
       updatePreferences,
       upsertRecipe,
       upsertHomeStockItem,
+      toggleRecipeFavourite,
     ],
   );
 

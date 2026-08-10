@@ -14,7 +14,7 @@ import type { WeatherLocation } from '../../domain/types';
 import {
   weatherCodeLabel,
   type WeatherDay,
-} from '../../integrations/weather/openMeteo';
+} from '../../integrations/weather/yr';
 import type { ForecastState } from './useWeatherWeek';
 
 export function WeatherPlanControl({
@@ -53,8 +53,8 @@ export function WeatherPlanControl({
         <MapPin aria-hidden="true" size={15} />
         <span>{location.name}</span>
       </button>
-      <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">
-        Weather by Open-Meteo
+      <a href="https://www.yr.no/" target="_blank" rel="noreferrer" title="Weather by Yr">
+        Yr
       </a>
     </div>
   );
@@ -89,7 +89,7 @@ export function WeatherDayInline({
   return (
     <div
       className="day-weather"
-      aria-label={`${label}, ${Math.round(forecast.temperatureMax)} degrees, ${forecast.precipitationProbability}% chance of rain`}
+      aria-label={`${label}, ${Math.round(forecast.temperatureMax)} degrees, ${forecast.precipitationAmount.toFixed(1)} millimetres of rain`}
     >
       <WeatherIcon code={forecast.weatherCode} />
       <div>
@@ -99,8 +99,8 @@ export function WeatherDayInline({
         </strong>
         <small>
           {label}
-          {forecast.precipitationProbability >= 20
-            ? ` · ${forecast.precipitationProbability}% rain`
+          {forecast.precipitationAmount > 0
+            ? ` · ${forecast.precipitationAmount.toFixed(1)} mm rain`
             : ''}
         </small>
       </div>

@@ -40,6 +40,6 @@ The deferred capabilities have explicit architecture boundaries so they can be a
 
 ## Next MVP priority
 
-Persistent Home Stock and stock-aware shopping are next. Common food and household items remain in the catalogue at quantity zero, can be added to the shopping list directly, and reduce recipe shopping quantities only when the match is confirmed and units are compatible. The following planning enhancement will suggest saved recipes that need no new ingredients and prioritise stock explicitly marked `Use soon`.
+Home Stock, replenishment suggestions and stock-only planning are implemented. The current release work is to unify ingredient matching, add safe metric conversions, reserve stock for locked meals, harden browser backup/recovery, and then deploy one stable build for a two-cycle household trial.
 
 See [`docs/BACKLOG.md`](docs/BACKLOG.md) for the maintained feature backlog and phased roadmap.

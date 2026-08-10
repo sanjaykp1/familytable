@@ -32,6 +32,7 @@ import {
 } from '../../domain/types';
 
 type ShopView = 'to-buy' | 'at-home';
+type ContentLayout = 'cards' | 'list';
 
 const CATEGORY_OPTIONS = CATEGORY_ORDER.map((value) => ({
   value,
@@ -391,6 +392,8 @@ export function ShoppingPage({ onOpenPlan }: { onOpenPlan: () => void }) {
     notify,
   } = useApp();
   const [view, setView] = useState<ShopView>('to-buy');
+  const [shoppingLayout, setShoppingLayout] = useState<ContentLayout>('list');
+  const [stockLayout, setStockLayout] = useState<ContentLayout>('list');
   const [stockSearch, setStockSearch] = useState('');
   const [stockKind, setStockKind] = useState<'all' | HomeStockKind>('all');
   const [stockFrozenOnly, setStockFrozenOnly] = useState(false);
@@ -453,7 +456,7 @@ export function ShoppingPage({ onOpenPlan }: { onOpenPlan: () => void }) {
   };
 
   return (
-    <div className="page-stack">
+    <div className="page-stack page-stack--compact">
       <PageHeader
         eyebrow={formatWeekRange(activeWeek)}
         title="Shop & Home Stock."
@@ -490,15 +493,26 @@ export function ShoppingPage({ onOpenPlan }: { onOpenPlan: () => void }) {
         }
       />
 
-      <SegmentedControl
-        label="Shop view"
-        value={view}
-        onChange={setView}
-        options={[
-          { value: 'to-buy', label: 'To buy' },
-          { value: 'at-home', label: 'At home' },
-        ]}
-      />
+      <div className="shop-view-toolbar">
+        <SegmentedControl
+          label="Shop view"
+          value={view}
+          onChange={setView}
+          options={[
+            { value: 'to-buy', label: 'To buy' },
+            { value: 'at-home', label: 'At home' },
+          ]}
+        />
+        <SegmentedControl
+          label={view === 'to-buy' ? 'Shopping list display' : 'Home Stock display'}
+          value={view === 'to-buy' ? shoppingLayout : stockLayout}
+          onChange={view === 'to-buy' ? setShoppingLayout : setStockLayout}
+          options={[
+            { value: 'list', label: 'List' },
+            { value: 'cards', label: 'Cards' },
+          ]}
+        />
+      </div>
 
       {replenishmentSuggestions.length ? (
         <Card className="replenishment-suggestions">
@@ -568,18 +582,73 @@ export function ShoppingPage({ onOpenPlan }: { onOpenPlan: () => void }) {
                 <span>{progress}%</span>
               </div>
             </Card>
-            {[...groups.entries()].map(([category, items]) => (
-              <Card className="shopping-group" key={category}>
-                <header>
-                  <h2>{CATEGORY_LABELS[category]}</h2>
-                  <span>{items.length}</span>
-                </header>
-                <div>
-                  {items.map((item) => (
-                    <div
-                      className={`shopping-line shopping-line--detailed ${item.checked ? 'is-checked' : ''}`}
-                      key={item.id}
-                    >
+            {shoppingLayout === 'list' ? (
+              [...groups.entries()].map(([category, items]) => (
+                <Card className="shopping-group" key={category}>
+                  <header>
+                    <h2>{CATEGORY_LABELS[category]}</h2>
+                    <span>{items.length}</span>
+                  </header>
+                  <div>
+                    {items.map((item) => (
+                      <div
+                        className={`shopping-line shopping-line--detailed ${item.checked ? 'is-checked' : ''}`}
+                        key={item.id}
+                      >
+                        <label className="shopping-line__toggle">
+                          <input
+                            type="checkbox"
+                            checked={item.checked}
+                            onChange={() => toggleShoppingItem(item.id)}
+                          />
+                          <span className="shopping-line__check">
+                            <Check aria-hidden="true" size={16} />
+                          </span>
+                          <span className="sr-only">Mark {item.name} as bought</span>
+                        </label>
+                        <div>
+                          <span className="shopping-line__name">{item.name}</span>
+                          <small
+                            className={
+                              item.requiresReview
+                                ? 'shopping-explanation shopping-explanation--review'
+                                : 'shopping-explanation'
+                            }
+                          >
+                            {reconciliation(item)}
+                          </small>
+                          {item.requiresReview ? (
+                            <small className="shopping-review-note">
+                              An unknown quantity, incompatible unit, or uncertain match needs
+                              review.
+                            </small>
+                          ) : null}
+                        </div>
+                        <div className="shopping-line__actions">
+                          <span className="shopping-line__quantity">{formatQuantity(item)}</span>
+                          {item.requiresReview ? (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => resolveShoppingReview(item.id)}
+                            >
+                              Review: buy full amount
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              ))
+            ) : (
+              <div className="shopping-card-grid" aria-label="Shopping item cards">
+                {shoppingItems.map((item) => (
+                  <Card
+                    className={`shopping-item-card ${item.checked ? 'is-checked' : ''}`}
+                    key={item.id}
+                  >
+                    <div className="shopping-item-card__header">
                       <label className="shopping-line__toggle">
                         <input
                           type="checkbox"
@@ -591,40 +660,34 @@ export function ShoppingPage({ onOpenPlan }: { onOpenPlan: () => void }) {
                         </span>
                         <span className="sr-only">Mark {item.name} as bought</span>
                       </label>
-                      <div>
-                        <span className="shopping-line__name">{item.name}</span>
-                        <small
-                          className={
-                            item.requiresReview
-                              ? 'shopping-explanation shopping-explanation--review'
-                              : 'shopping-explanation'
-                          }
-                        >
-                          {reconciliation(item)}
-                        </small>
-                        {item.requiresReview ? (
-                          <small className="shopping-review-note">
-                            An unknown quantity, incompatible unit, or uncertain match needs review.
-                          </small>
-                        ) : null}
-                      </div>
-                      <div className="shopping-line__actions">
-                        <span className="shopping-line__quantity">{formatQuantity(item)}</span>
-                        {item.requiresReview ? (
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => resolveShoppingReview(item.id)}
-                          >
-                            Review: buy full amount
-                          </Button>
-                        ) : null}
-                      </div>
+                      <span>{CATEGORY_LABELS[item.category]}</span>
                     </div>
-                  ))}
-                </div>
-              </Card>
-            ))}
+                    <div>
+                      <h2>{item.name}</h2>
+                      <strong>{formatQuantity(item)}</strong>
+                    </div>
+                    <small
+                      className={
+                        item.requiresReview
+                          ? 'shopping-explanation shopping-explanation--review'
+                          : 'shopping-explanation'
+                      }
+                    >
+                      {reconciliation(item)}
+                    </small>
+                    {item.requiresReview ? (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => resolveShoppingReview(item.id)}
+                      >
+                        Review: buy full amount
+                      </Button>
+                    ) : null}
+                  </Card>
+                ))}
+              </div>
+            )}
           </section>
         ) : plannedRecipes ? (
           <EmptyState
@@ -651,7 +714,7 @@ export function ShoppingPage({ onOpenPlan }: { onOpenPlan: () => void }) {
         )
       ) : (
         <section className="home-stock" aria-label="Home Stock">
-          <Card className="home-stock__toolbar">
+          <div className="library-toolbar home-stock__toolbar">
             <label className="search-field">
               <Search aria-hidden="true" size={18} />
               <span className="sr-only">Search Home Stock</span>
@@ -698,7 +761,7 @@ export function ShoppingPage({ onOpenPlan }: { onOpenPlan: () => void }) {
                 </select>
               </label>
             </div>
-          </Card>
+          </div>
 
           {nextPlanStockIds.length ? (
             <Card className="next-plan-constraints" aria-live="polite">
@@ -751,10 +814,10 @@ export function ShoppingPage({ onOpenPlan }: { onOpenPlan: () => void }) {
           ) : null}
 
           {visibleStock.length ? (
-            <div className="home-stock__grid">
+            <div className={stockLayout === 'cards' ? 'home-stock__grid' : 'home-stock__list'}>
               {visibleStock.map((item) => (
                 <Card
-                  className={`stock-card ${item.quantity === 0 ? 'stock-card--empty' : ''}`}
+                  className={`${stockLayout === 'cards' ? 'stock-card' : 'stock-list__item'} ${item.quantity === 0 ? 'stock-card--empty' : ''}`}
                   key={item.id}
                 >
                   <div className="stock-card__heading">
@@ -790,9 +853,15 @@ export function ShoppingPage({ onOpenPlan }: { onOpenPlan: () => void }) {
                     </small>
                   ) : null}
                   {item.quantity === 0 ? (
-                    <Button variant="primary" onClick={() => addHomeStockItemToShopping(item.id)}>
-                      Add to shop
-                    </Button>
+                    <div className="stock-card__quantity-controls stock-card__quantity-controls--empty">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => addHomeStockItemToShopping(item.id)}
+                      >
+                        Add to shop
+                      </Button>
+                    </div>
                   ) : (
                     <div
                       className="stock-card__quantity-controls"

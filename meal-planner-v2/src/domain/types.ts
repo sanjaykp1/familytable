@@ -118,12 +118,14 @@ export interface WeatherLocation {
 }
 
 export interface AppState {
-  schemaVersion: 7;
+  schemaVersion: 8;
   recipes: Recipe[];
   plans: Record<string, MealPlan>;
   shoppingLists: Record<string, ShoppingItem[]>;
   homeStockItems: HomeStockItem[];
   preferences: Preferences;
+  /** ISO timestamp of the last backup whose download was started, or null if none exists. */
+  lastBackupAt: string | null;
 }
 
 export interface ReplenishmentSuggestion {

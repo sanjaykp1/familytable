@@ -25,7 +25,7 @@ export default function App() {
   const navigate = (next: AppScreen) => {
     window.location.hash = `/${next}`;
     setScreen(next);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0 });
   };
 
   return (

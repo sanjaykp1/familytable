@@ -21,7 +21,7 @@ function stateWith(stock: HomeStockItem[] = []): AppState {
   const plan = createEmptyPlan(weekStart, 4);
   plan.slots.monday = { ...plan.slots.monday, recipeId: 'seed-salmon' };
   return {
-    schemaVersion: 7,
+    schemaVersion: 8,
     recipes: SEED_RECIPES.map((recipe) => ({
       ...recipe,
       ingredients: recipe.ingredients.map((ingredient) => ({ ...ingredient })),
@@ -31,6 +31,7 @@ function stateWith(stock: HomeStockItem[] = []): AppState {
     plans: { [weekStart]: plan },
     shoppingLists: { [weekStart]: buildShoppingList(plan, SEED_RECIPES, [], stock) },
     homeStockItems: stock,
+    lastBackupAt: null,
     preferences: {
       householdName: 'Test household',
       defaultServings: 4,
@@ -137,6 +138,21 @@ afterEach(async () => {
 });
 
 describe('ShoppingPage Home Stock', () => {
+  it('switches the shopping list and Home Stock between list and card displays', async () => {
+    const page = await renderShopping(stateWith([stockItem()]));
+
+    expect(page.container.querySelector('.shopping-group')).not.toBeNull();
+    await click(page.container, 'Cards');
+    expect(page.container.querySelector('.shopping-card-grid')).not.toBeNull();
+
+    await click(page.container, 'At home');
+    expect(page.container.querySelector('.home-stock__list')).not.toBeNull();
+    await click(page.container, 'Cards');
+    expect(page.container.querySelector('.home-stock__grid')).not.toBeNull();
+    await click(page.container, 'List');
+    expect(page.container.querySelector('.home-stock__list')).not.toBeNull();
+  });
+
   it('shows the reconciled happy-path equation for recipe needs', async () => {
     const page = await renderShopping(stateWith([stockItem()]));
 
@@ -144,7 +160,17 @@ describe('ShoppingPage Home Stock', () => {
   });
 
   it('keeps a zero-stock item visible and adds it to the shop in one action', async () => {
-    const page = await renderShopping(stateWith([stockItem({ quantity: 0, name: 'toilet paper', kind: 'household', category: 'Household', unit: 'rolls' })]));
+    const page = await renderShopping(
+      stateWith([
+        stockItem({
+          quantity: 0,
+          name: 'toilet paper',
+          kind: 'household',
+          category: 'Household',
+          unit: 'rolls',
+        }),
+      ]),
+    );
 
     await click(page.container, 'At home');
     expect(page.container.textContent).toContain('toilet paper');
@@ -152,7 +178,11 @@ describe('ShoppingPage Home Stock', () => {
 
     expect(page.snapshot()?.shoppingItems).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: 'toilet paper', sources: ['stock-top-up'], remainingBuyQuantity: 1 }),
+        expect.objectContaining({
+          name: 'toilet paper',
+          sources: ['stock-top-up'],
+          remainingBuyQuantity: 1,
+        }),
       ]),
     );
   });
@@ -246,7 +276,11 @@ describe('ShoppingPage Home Stock', () => {
 
     expect(page.snapshot()?.shoppingItems).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: 'dishwasher tablets', sources: ['manual'], sourceRecipeIds: [] }),
+        expect.objectContaining({
+          name: 'dishwasher tablets',
+          sources: ['manual'],
+          sourceRecipeIds: [],
+        }),
       ]),
     );
   });
@@ -257,7 +291,9 @@ describe('ShoppingPage Home Stock', () => {
     expect(page.container.textContent).toContain('stock needs review');
     await click(page.container, 'Review: buy full amount');
 
-    expect(page.snapshot()?.shoppingItems.find((item) => item.name === 'salmon fillet')).toMatchObject({
+    expect(
+      page.snapshot()?.shoppingItems.find((item) => item.name === 'salmon fillet'),
+    ).toMatchObject({
       requiresReview: false,
       confirmedStockApplied: 0,
       remainingBuyQuantity: 600,

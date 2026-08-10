@@ -3,7 +3,7 @@ import { type FormEvent, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import type { WeatherLocation } from '../../domain/types';
-import { searchWeatherLocations } from '../../integrations/weather/openMeteo';
+import { searchWeatherLocations } from '../../integrations/weather/yr';
 
 export function WeatherSettings({
   location,

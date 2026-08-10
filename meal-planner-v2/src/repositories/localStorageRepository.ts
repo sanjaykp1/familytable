@@ -59,6 +59,13 @@ function requireString(value: unknown, field: string): string {
   return value;
 }
 
+function requireTimestamp(value: unknown, field: string): string | null {
+  if (value === null) return null;
+  const timestamp = requireString(value, field);
+  if (Number.isNaN(Date.parse(timestamp))) invalid(field);
+  return timestamp;
+}
+
 function requireNumber(value: unknown, field: string, minimum = 0): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum) invalid(field);
   return value;
@@ -359,7 +366,8 @@ export function validateAndMigrate(value: unknown): AppState {
     value.schemaVersion !== 4 &&
     value.schemaVersion !== 5 &&
     value.schemaVersion !== 6 &&
-    value.schemaVersion !== 7
+    value.schemaVersion !== 7 &&
+    value.schemaVersion !== 8
   ) {
     throw new RepositoryError('This backup uses an unsupported data version.');
   }
@@ -374,7 +382,7 @@ export function validateAndMigrate(value: unknown): AppState {
     throw new RepositoryError('The backup is missing Home Stock items.');
   }
   return {
-    schemaVersion: 7,
+    schemaVersion: 8,
     recipes: addCatalogueExpansion(
       value.recipes.map((recipe) => normalizeRecipe(recipe, sourceVersion)),
       sourceVersion,
@@ -399,6 +407,8 @@ export function validateAndMigrate(value: unknown): AppState {
         : requireArray(value.homeStockItems, 'Home Stock items').map((item) =>
             normalizeHomeStockItem(item, sourceVersion),
           ),
+    lastBackupAt:
+      sourceVersion < 8 ? null : requireTimestamp(value.lastBackupAt, 'a last backup timestamp'),
     preferences: normalizePreferences(value.preferences),
   };
 }
@@ -432,7 +442,7 @@ export class LocalStorageMealPlannerRepository implements MealPlannerRepository 
   }
 
   exportData(state: AppState): string {
-    return JSON.stringify(state, null, 2);
+    return JSON.stringify(validateAndMigrate(state), null, 2);
   }
 
   clear(): void {

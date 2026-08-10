@@ -589,7 +589,7 @@ export function createInitialState(): AppState {
   const currentWeek = startOfWeek();
   const defaultServings = 4;
   return {
-    schemaVersion: 7,
+    schemaVersion: 8,
     recipes: [...SEED_RECIPES, ...CATALOGUE_EXPANSION_RECIPES].map((recipe) => ({
       ...recipe,
       ingredients: recipe.ingredients.map((item) => ({ ...item })),
@@ -599,6 +599,7 @@ export function createInitialState(): AppState {
     },
     shoppingLists: {},
     homeStockItems: [],
+    lastBackupAt: null,
     preferences: {
       householdName: 'The Family Table',
       defaultServings,

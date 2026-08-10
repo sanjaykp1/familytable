@@ -1,156 +1,189 @@
-# The Family Table — product backlog and roadmap
+# The Family Table — active MVP roadmap
 
-Updated: 9 August 2026
+Updated: 10 August 2026
 
 ## Product direction
 
-The product should reduce the mental load of deciding what a household will eat and keeping common food and household essentials in stock. The core loop is plan, check what is already at home, and buy only what is still needed. It must remain fast and reliable without an account; integrations are optional enhancements, never prerequisites.
+Family Table should reduce the mental load of deciding what a household will eat and buying only what is still needed. The MVP remains local-first, offline-capable and usable without an account. Integrations are optional enhancements, never prerequisites.
 
-The researched Oda architecture, prerequisites and phased delivery gates are documented in
-[ODA_INTEGRATION_PLAN.md](./ODA_INTEGRATION_PLAN.md). The incremental implementation sequence and
-per-release test gates are in [ODA_MVP_DELIVERY_PLAN.md](./ODA_MVP_DELIVERY_PLAN.md).
+The Home Stock, replenishment and stock-only planning foundations are implemented. Their superseded implementation plan is preserved in [archive/MVP_FOUNDATION_COMPLETED.md](./archive/MVP_FOUNDATION_COMPLETED.md). The researched Oda architecture remains separate in [ODA_INTEGRATION_PLAN.md](./ODA_INTEGRATION_PLAN.md) and is not active MVP scope.
 
-## Shipped foundation
+## Current release goal
 
-- Local-first recipes, weekly plans, shopping lists, backups, themes and offline production shell
-- Structured ingredient quantities and serving-based shopping calculations
-- Meal generation with locking, replacement and recently-cooked deprioritisation
-- Leftovers, eating out/takeaway and skipped-dinner planning outcomes
-- Separate prep and cook time, cooking-attention level and make-ahead capability
-- Recipe filters for make-ahead and low-attention meals
-- Optional 16-day planning forecast with a manually selected location
+Ship a dependable local MVP, use it for two real weekly planning cycles, and let observed household friction determine the next feature.
 
-## Roadmap
+The active sequence is deliberately narrow:
 
-### Phase 0 — repository and delivery hygiene
+1. Harden pantry matching and stock allocation.
+2. Make browser persistence and recovery trustworthy.
+3. Deploy one stable build and dogfood it for two weeks.
+4. Choose the next product feature from recorded evidence.
 
-Goal: make all product work recoverable and automatically checked before expanding the MVP.
+## 1. Harden pantry matching and stock allocation
 
-1. Connect the local project to the canonical GitHub repository
-2. Commit source, tests, documentation and lockfiles while excluding secrets and generated output
-3. Pin the Node.js major version and document the local setup workflow
-4. Run lint, client tests, companion tests and both builds in GitHub Actions
-5. Require the CI check before merging once the first workflow run is green
-6. Deploy the static app to Cloudflare Pages from `main` for a stable free production URL and deployment rollback
+**Priority:** P0
 
-### Phase 1 — personal household loop
+**Recommended model:** `gpt-5.6-sol` with high reasoning
 
-Goal: make the app useful every week by reconciling meal requirements and recurring household needs with what is already at home.
+**Why now:** shopping reconciliation and stock-only planning currently implement separate exact-name, exact-unit matching. This creates inconsistent or incorrect results for plurals, safe metric conversions, duplicate stock rows and stock already committed to locked meals.
 
-1. **Persistent Home Stock**
-   - Track food and basic household items in cupboard, fridge, freezer, bathroom, cleaning storage or another location
-   - Keep common items in the catalogue when their quantity reaches zero; zero is a valid stock state, not deletion
-   - Support exact quantities where useful and an unknown/estimated state where counting would add friction
-   - Add, adjust, mark used up, archive and restore items without requiring Oda
-2. **Stock-aware shopping v1**
-   - Show `Recipe need − confirmed stock = Buy` while preserving the original recipe requirement
-   - Subtract only exact matches with compatible units; uncertain matches remain visible for review
-   - Allow any zero-stock or household item to be added to the shopping list in one action
-   - Support manual shopping needs that do not come from recipes
-   - Never deduct stock automatically when planning, shopping or marking a meal cooked
-   - Acceptance: after planning a week, the user can reconcile the list with Home Stock in under two minutes
-3. **Recipe onboarding and import**
-   - First-run choice to keep or remove starter recipes
-   - Paste structured recipe text with an editable review step
-   - Duplicate detection before saving
-   - Acceptance: a family can add ten real recipes in under fifteen minutes
+### Scope
 
-### Phase 2 — use-what-we-have planning and Shopping v2
+- Introduce one pure ingredient-matching service used by both `shopping.ts` and `stockPlanning.ts`.
+- Resolve names to a canonical ingredient name through an explicit alias registry. Initial regression cases include `tomato` and `tomatoes`; avoid generic stemming rules that turn unrelated words into matches.
+- Normalize case and whitespace without changing meaning.
+- Convert only within the safe metric families `g ↔ kg` and `ml ↔ l`, using a stable base unit for calculations.
+- Never infer conversions for cans, bags, bunches, pieces, packs or between mass and volume.
+- Aggregate multiple confirmed stock rows that resolve to the same canonical ingredient and compatible unit family.
+- Return a structured review result for ambiguous aliases, unknown quantities, unsupported conversions or incompatible units. Uncertain stock is never silently subtracted or used to qualify a stock-only meal.
+- Preserve the current rule that planning does not mutate Home Stock.
+- Before filling open days with stock-only meals, reserve confirmed compatible quantities required by already locked recipe meals, in plan-day order.
 
-Goal: turn confirmed Home Stock into useful meal choices and reduce repetitive stock checking without silently deciding what the household should buy.
+### Required domain contract
 
-1. **Cook from Home Stock**
-   - Suggest saved recipes that can be made entirely from confirmed quantities already at home
-   - Strict mode excludes any recipe with a missing ingredient, insufficient quantity or unresolved unit mismatch
-   - Show why a recipe qualifies and how much of each item it would use
-   - Do not invent a new recipe or quietly assume untracked ingredients in the first version
-2. **Use-soon planning priority**
-   - Let the user mark a Home Stock item as `Use soon`, optionally because it is approaching spoilage
-   - Offer `Use in next plan` as a stronger planning constraint when the user wants a specific item included
-   - Boost or require saved recipes containing those items and explain the resulting meal choice
-   - Keep the marker until the user clears it or confirms a stock adjustment; planning alone never clears it
-3. **Replenishment suggestions**
-   - Optional reorder point and target quantity per persistent item
-   - Example: bananas at `0`, reorder point `2`, target `6` produces a suggestion to buy `6`
-   - Suggestions require accept or dismiss; they do not silently enter the active shopping list
-   - When recipe demand and a top-up rule overlap, buy the larger requirement rather than adding them together
-4. **Per-night planning details**
-   - Override servings for an individual night
-   - Optional note such as “grandparents visiting”
-   - Freezer/pantry meal as a non-shopping plan outcome
-5. **Planning quality controls**
-   - Choose busy nights and favour low-attention recipes there
-   - Balance vegetarian, fish and family favourites across a week
-   - Explain why each generated meal was selected
+The shared service should return a typed result containing:
 
-### Phase 3 — Oda feasibility and read-only pilot
+- canonical ingredient identity and match kind (`exact`, `alias` or `unmatched`);
+- requested quantity and normalized unit family;
+- per-stock-row allocations and total confirmed quantity;
+- remaining requirement;
+- review status and a stable reason code;
+- the remaining stock ledger for subsequent allocations.
 
-Goal: prove the external integration safely before allowing any cart writes.
+Shopping may use partial confirmed coverage. Strict stock-only eligibility must require full confirmed coverage. Both flows must derive their decisions from this same result rather than reimplementing matching rules.
 
-1. Read-only Oda MCP compatibility spike and capability report
-2. Local companion security design and contract fixtures
-3. Conditional product search and connection-health UI
-4. Order-history pilot when the upstream capability is available
+### Acceptance criteria
 
-### Phase 4 — reviewed Oda cart pilot
+- `tomato` and `tomatoes` reconcile through an explicit alias to one canonical ingredient.
+- `1 kg` covers `1000 g`, and `1 l` covers `1000 ml`, in either direction without floating-point drift.
+- Two compatible rows for the same product are allocated once and summed correctly.
+- Cans, bags, bunches, pieces and cross-family units never receive guessed conversions.
+- Ambiguous, unknown or incompatible matches remain visible for review and do not reduce the buy quantity.
+- Shopping reconciliation and stock-only planning produce the same match classification and compatible allocation for the same inputs.
+- Locked recipe meals reserve their confirmed ingredient allocations before open days are filled. A regression test proves that the same stock cannot fund both a locked meal and a newly generated stock-only meal.
+- Existing shopping ticks, replenishment reasons and no-automatic-deduction rules remain intact.
+- `npm run check` passes.
 
-Goal: reduce the work between an approved plan and a cart without automating purchasing decisions.
+## 2. Make browser persistence and recovery trustworthy
 
-1. Ingredient-to-product matching with remembered household preferences
-2. Explicit pack-count, availability and substitution review
-3. Confirmed, idempotent merge into the existing Oda cart
-4. Checkout, payment and delivery-slot selection remain in Oda
+**Priority:** P0
 
-### Phase 5 — preparation and adaptive planning
+**Recommended model:** `gpt-5.6-terra` with high reasoning
 
-Goal: turn a meal plan into a practical household workflow.
+**Why now:** the app saves locally and supports JSON backup, but it does not show whether browser storage is protected from eviction, when the last backup was made, or prove the whole recovery loop in a real browser.
 
-1. **Preparation view**
-   - Sunday or previous-evening make-ahead checklist
-   - Group prep tasks across recipes
-   - Reminders remain opt-in and local where possible
-2. **Weather-aware suggestions**
-   - Explicit household rules, not hidden automatic behavior
-   - Examples: barbecue on dry evenings, soup below a chosen temperature, low-effort meals during severe weather
-   - Show the reason when weather changes a suggestion
+### Scope
 
-### Phase 6 — shared household product
+- Add a Settings storage card that checks `navigator.storage.persisted()` and, after an explicit user action, calls `navigator.storage.persist()`.
+- Show four honest states: persistent, not granted, unsupported and check/request failed. A denial is not an application error and must continue to recommend backups.
+- Treat persistent storage as extra eviction protection, not as a backup. The API is available only in secure contexts and the browser decides whether to grant the request. See [MDN: `StorageManager.persist()`](https://developer.mozilla.org/en-US/docs/Web/API/StorageManager/persist).
+- Record `lastBackupAt` only after a backup payload has been successfully prepared for download.
+- Show the last backup date in Settings and a non-blocking reminder when no backup has been made or the most recent backup is more than seven days old. Dismissing the reminder may hide it for the current session, but must not falsify the recorded date.
+- Keep import validation and replacement semantics unchanged.
+- Add Playwright configuration and a browser-level recovery smoke test. Playwright supports Chromium, Firefox and WebKit through configured projects; its storage-state APIs can also include IndexedDB if the repository moves there later. See the official [browser](https://playwright.dev/docs/browsers) and [BrowserContext](https://playwright.dev/docs/api/class-browsercontext) documentation.
 
-Goal: support two or more people without losing the simplicity of the local MVP.
+### Browser smoke scenario
 
-1. Optional household accounts and invitations
-2. Near-real-time plan and shopping-list synchronization
-3. Conflict-safe edits and visible change history
-4. Hosted database, monitoring and recovery
+Run the same user-visible flow in Chromium, Firefox and WebKit:
+
+1. Create bananas in Home Stock with quantity `0`.
+2. Add bananas to the shopping list.
+3. Mark an ingredient `Use soon`.
+4. Generate at least one stock-only meal.
+5. Reload and verify the stock item, shopping source, priority and generated plan persist.
+6. Export a backup through the Settings UI.
+7. Clear/reset local app data through the UI and verify the created data is gone.
+8. Import the downloaded backup and verify full restoration.
+
+Stub the persistent-storage permission response only for deterministic UI-state tests. The data reload, export, clear and import path must use the real browser storage and real UI.
+
+### Acceptance criteria
+
+- Settings accurately reports persistent-storage support and result without promising that local data is backed up.
+- A denied or unsupported request does not block use of the app.
+- `lastBackupAt` survives reload and updates only when export is initiated successfully.
+- The seven-day reminder is derived from the recorded timestamp and current time.
+- The smoke scenario passes in Chromium, Firefox and WebKit locally and in CI.
+- The normal unit, companion and production build checks continue to pass.
+
+## 3. Deploy and dogfood for two weeks
+
+**Priority:** P0 release gate
+
+**Recommended model:** `gpt-5.6-terra` with medium reasoning for deployment setup; household use is manual
+
+**Why now:** local correctness is not enough. The same stable origin must survive normal phone and desktop use over two planning cycles.
+
+### Deployment
+
+- Connect the GitHub repository to Cloudflare Pages with `main` as the production branch.
+- Configure project root `meal-planner-v2`, build command `npm run build`, output directory `dist` and Node.js 24.
+- Record the stable production URL in the root and app READMEs.
+- Verify a production build, offline reload, JSON export/import and the browser smoke flow against the deployed URL.
+- Keep the last successful production deployment available as a rollback target. Cloudflare Pages automatically deploys connected Git branches and supports rollback to a previous successful production deployment; see its [Git integration](https://developers.cloudflare.com/pages/configuration/git-integration/) and [rollback](https://developers.cloudflare.com/pages/configuration/rollbacks/) documentation.
+
+### Dogfood protocol
+
+Use the deployed URL as the household's only planning copy for two consecutive weekly planning cycles. Record observations in [DOGFOOD_LOG.md](./DOGFOOD_LOG.md), limited to:
+
+- manual corrections made repeatedly;
+- ingredients that fail to match;
+- stock quantities that are too tedious to maintain;
+- meal suggestions rejected and why;
+- household items repeatedly added manually.
+
+Do not turn isolated preferences into features during the trial. At the end of week two, group repeated observations, count their frequency and identify the smallest change that would remove the most household effort.
+
+### Exit criteria
+
+- One documented stable production URL is used for both planning cycles.
+- Both cycles have dated observations or an explicit `none observed` entry in each category.
+- Any data-loss, incorrect-stock or false stock-only result is treated as a release-blocking defect.
+- The next feature decision cites dogfood observations rather than expectation alone.
+
+## 4. Evidence-gated next product feature
+
+**Current hypothesis, not committed scope:** paste/import a recipe with editable review and duplicate detection.
+
+This is the leading candidate because stock-only planning becomes materially more useful when the household can add its actual recipes quickly. It should move into active implementation only if the two-week log confirms recipe onboarding is a repeated source of effort or weak suggestions.
+
+If selected, the first release should:
+
+- accept pasted structured or semi-structured recipe text;
+- parse into the existing `Recipe` and `Ingredient` model;
+- require an editable review before saving;
+- use the shared canonical ingredient matcher during review;
+- detect likely duplicates by normalized name and ingredient overlap;
+- never require an LLM for successful import.
+
+## Deferred until evidence changes the priority
+
+- Firebase or another backend
+- Oda integration
+- AI-generated recipes from arbitrary new ingredients
+- Multi-user household synchronization
+- Large component or architecture refactors
 
 ## Prioritised backlog
 
-| Priority | Feature                                      | Status   | Why it matters                                                                |
-| -------- | -------------------------------------------- | -------- | ----------------------------------------------------------------------------- |
-| P0       | Versioned data migrations and JSON backup    | Shipped  | Protects local household data                                                 |
-| P0       | Persistent Home Stock catalogue              | Next     | Common items must remain useful even when their quantity is zero               |
-| P0       | Stock-aware shopping reconciliation          | Next     | Answers what still needs to be bought after checking the home                  |
-| P1       | Manual household needs                       | Next     | Shopping includes toiletries and cleaning supplies, not only recipe items      |
-| P1       | Recipe onboarding/import                     | Planned  | Starter recipes are not the household's real library                          |
-| P1       | Cook entirely from Home Stock                | Planned  | Produces a useful meal without creating a new shopping requirement             |
-| P1       | Use-soon meal-plan priority                  | Planned  | Helps consume food before it spoils                                            |
-| P1       | Replenishment suggestions                    | Planned  | Reduces repeated checking while keeping additions reviewable                   |
-| P1       | Per-night servings, notes and stock meal      | Planned  | Real weeks include guests and meals that should not generate shopping          |
-| P1       | Make-ahead preparation view                  | Planned  | Converts recipe metadata into saved time                                      |
-| P2       | Oda compatibility and security spike         | No-go    | Pinned community MCP fails product tests; fake-provider foundation is safe     |
-| P2       | Oda product matching and cart review         | Planned  | Useful once recipe ingredients have passed structured review                   |
-| P2       | Weather-aware planning rules                 | Planned  | Useful only after the forecast display earns trust                            |
-| P2       | Recipe URL import                            | Research | Browser CORS and inconsistent recipe markup require a careful import boundary |
-| P3       | Household synchronization                    | Later    | Requires accounts, backend and conflict handling                              |
+| Priority | Work item | Status | Release gate |
+| --- | --- | --- | --- |
+| P0 | Shared ingredient matching and locked-meal reservation | Active | Domain regressions and `npm run check` pass |
+| P0 | Persistent-storage status, backup date and reminder | Queued | Settings states and timestamp tests pass |
+| P0 | Playwright recovery smoke test | Queued | Chromium, Firefox and WebKit pass |
+| P0 | Cloudflare Pages production deployment | Queued | Stable URL and live smoke verified |
+| P0 | Two-week dogfood trial | Blocked by deployment | Two complete planning cycles recorded |
+| P1 | Recipe paste/import with review and duplicate detection | Hypothesis | Must be supported by dogfood evidence |
+| P2 | Oda read-only feasibility work | Deferred / current no-go | Upstream capability and security gates change |
+| P3 | Household synchronization and backend | Later | Local MVP proves recurring multi-user need |
 
 ## Product rules
 
-- Do not hide automation. Show why a recipe or product was suggested.
 - Wrongly removing an ingredient is worse than leaving an extra item for review.
-- A Home Stock item at zero remains a household item until the user explicitly archives or deletes it.
+- Do not hide automation. Show why a recipe or product was suggested.
+- A Home Stock item at zero remains in the catalogue until explicitly archived or deleted.
 - Replenishment rules create suggestions, not silent shopping-list additions.
-- “Cook from Home Stock” means every required ingredient is confirmed available; it does not hide shortages or assume untracked staples.
-- A `Use soon` marker affects ranking or an explicit planning constraint, but never consumes stock by itself.
-- Weather and integrations must fail gracefully without blocking planning.
-- Prefer structured fields for behavior-driving data; use free-text tags for discovery only.
+- “Cook from Home Stock” means every required ingredient is confirmed available after locked-meal reservations.
+- Planning, shopping and marking a meal cooked never deduct stock automatically.
+- Persistent browser storage reduces eviction risk; only an exported backup is portable recovery.
 - Add complexity only when it removes more household effort than it creates.

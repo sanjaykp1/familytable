@@ -3,7 +3,7 @@ import type { WeatherLocation } from '../../domain/types';
 import {
   fetchWeatherForecast,
   type WeatherForecast,
-} from '../../integrations/weather/openMeteo';
+} from '../../integrations/weather/yr';
 
 export type ForecastState =
   | { status: 'idle' }

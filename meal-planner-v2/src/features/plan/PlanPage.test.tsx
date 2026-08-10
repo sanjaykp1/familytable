@@ -4,13 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppProvider, useApp } from '../../app/AppProvider';
 import { startOfWeek } from '../../domain/date';
 import { createEmptyPlan, SEED_RECIPES } from '../../domain/seed';
-import type {
-  AppState,
-  HomeStockItem,
-  MealPlan,
-  Recipe,
-  ShoppingItem,
-} from '../../domain/types';
+import type { AppState, HomeStockItem, MealPlan, Recipe, ShoppingItem } from '../../domain/types';
 import type { MealPlannerRepository } from '../../repositories/mealPlannerRepository';
 import { PlanPage } from './PlanPage';
 
@@ -35,11 +29,12 @@ function cloneRecipes(recipes: Recipe[]) {
 function stateWith(recipes: Recipe[] = SEED_RECIPES): AppState {
   const weekStart = startOfWeek();
   return {
-    schemaVersion: 7,
+    schemaVersion: 8,
     recipes: cloneRecipes(recipes),
     plans: { [weekStart]: createEmptyPlan(weekStart, 4) },
     shoppingLists: {},
     homeStockItems: [],
+    lastBackupAt: null,
     preferences: {
       householdName: 'Test household',
       defaultServings: 4,
@@ -202,6 +197,69 @@ describe('PlanPage', () => {
       servings: 6,
     });
     expect(page.snapshot()!.plan.slots.tuesday.recipeId).not.toBeNull();
+  });
+
+  it('clears the current plan and its shopping list after confirmation', async () => {
+    const initialState = stateWith();
+    const plan = initialState.plans[startOfWeek()];
+    initialState.plans[startOfWeek()] = {
+      ...plan,
+      status: 'ready',
+      slots: {
+        ...plan.slots,
+        monday: { ...plan.slots.monday, recipeId: SEED_RECIPES[0].id, locked: true },
+        tuesday: { ...plan.slots.tuesday, kind: 'leftovers' },
+      },
+    };
+    initialState.shoppingLists[startOfWeek()] = [
+      {
+        id: 'shopping-salmon',
+        name: 'salmon fillet',
+        grossRecipeNeed: 600,
+        confirmedStockApplied: 0,
+        remainingBuyQuantity: 600,
+        unit: 'g',
+        category: 'protein',
+        sources: ['recipe'],
+        sourceRecipeIds: [SEED_RECIPES[0].id],
+        requiresReview: false,
+        checked: false,
+      },
+    ];
+    const page = await renderPlan(initialState);
+
+    await click(buttonNamed(page.container, 'Reset'));
+    expect(page.container.textContent).toContain('Clear this meal plan?');
+    await click(buttonNamed(page.container, 'Clear meal plan'));
+
+    expect(page.snapshot()?.plan.status).toBe('draft');
+    expect(
+      Object.values(page.snapshot()!.plan.slots).every(
+        (slot) =>
+          slot.recipeId === null && slot.kind === 'recipe' && !slot.locked && slot.servings === 4,
+      ),
+    ).toBe(true);
+    expect(page.snapshot()?.shoppingItems).toEqual([]);
+  });
+
+  it('renders plan progress with a transform that reflects decided dinners', async () => {
+    const page = await renderPlan(stateWith());
+    const progress = page.container.querySelector<HTMLElement>(
+      '.plan-progress [role="progressbar"]',
+    );
+    const fill = progress?.querySelector<HTMLElement>('span');
+    const monday = page.container.querySelector<HTMLSelectElement>('#meal-monday');
+
+    expect(progress?.getAttribute('aria-valuenow')).toBe('0');
+    expect(fill?.style.transform).toBe('scaleX(0)');
+
+    await act(async () => {
+      monday!.value = SEED_RECIPES[0].id;
+      monday!.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    expect(progress?.getAttribute('aria-valuenow')).toBe('1');
+    expect(fill?.style.transform).toBe(`scaleX(${1 / 7})`);
   });
 
   it('guides an empty library to Recipes without attempting generation', async () => {

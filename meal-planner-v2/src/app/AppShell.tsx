@@ -25,7 +25,7 @@ export function AppShell({
   const dark = state.preferences.theme === 'dark';
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${activeScreen === 'plan' ? 'app-shell--plan' : ''}`}>
       <aside className="sidebar">
         <button className="brand" onClick={() => onNavigate('plan')} aria-label="Open weekly plan">
           <span className="brand__mark">
@@ -52,10 +52,22 @@ export function AppShell({
         </nav>
 
         <div className="sidebar__footer">
-          <span className={`save-state ${storageError ? 'save-state--error' : ''}`}>
-            <span aria-hidden="true" />
-            {storageError ? 'Not saved' : 'Saved on this device'}
-          </span>
+          <div className="sidebar__footer-status">
+            <span className={`save-state ${storageError ? 'save-state--error' : ''}`}>
+              <span aria-hidden="true" />
+              {storageError ? 'Not saved' : 'Saved on this device'}
+            </span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="sidebar__theme-toggle"
+              onClick={() => updatePreferences({ theme: dark ? 'light' : 'dark' })}
+              aria-label={dark ? 'Use light theme' : 'Use dark theme'}
+              title={dark ? 'Use light theme' : 'Use dark theme'}
+            >
+              {dark ? <Sun aria-hidden="true" size={17} /> : <Moon aria-hidden="true" size={17} />}
+            </Button>
+          </div>
           <p>No account. No cloud. Your household data stays here.</p>
         </div>
       </aside>

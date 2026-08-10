@@ -12,7 +12,11 @@ export function ToastViewport() {
           <div key={toast.id} className={`toast toast--${toast.tone}`} role="status">
             <Icon aria-hidden="true" size={19} />
             <span>{toast.message}</span>
-            <button onClick={() => dismissToast(toast.id)} aria-label="Dismiss message">
+            <button
+              onClick={() => dismissToast(toast.id)}
+              aria-label="Dismiss message"
+              title="Dismiss message"
+            >
               <X aria-hidden="true" size={17} />
             </button>
           </div>

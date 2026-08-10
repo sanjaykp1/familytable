@@ -278,7 +278,7 @@ describe('LocalStorageMealPlannerRepository', () => {
 
     const restored = repository.importData(JSON.stringify(legacy));
 
-    expect(restored.schemaVersion).toBe(7);
+    expect(restored.schemaVersion).toBe(8);
     expect(restored.recipes[0].cookAttention).toBe('mostly-hands-off');
     expect(restored.recipes[0].makeAhead).toBe('prep-ahead');
     expect(restored.preferences.weatherLocation).toBeNull();
@@ -310,7 +310,7 @@ describe('LocalStorageMealPlannerRepository', () => {
 
     const restored = repository.importData(JSON.stringify(legacy));
 
-    expect(restored.schemaVersion).toBe(7);
+    expect(restored.schemaVersion).toBe(8);
     expect(restored.recipes).toEqual(current.recipes);
     expect(restored.plans).toEqual(current.plans);
     expect(restored.preferences).toEqual(legacy.preferences);
@@ -351,7 +351,7 @@ describe('LocalStorageMealPlannerRepository', () => {
 
     const restored = repository.importData(JSON.stringify(legacy));
 
-    expect(restored.schemaVersion).toBe(7);
+    expect(restored.schemaVersion).toBe(8);
     expect(restored.homeStockItems).toEqual([
       expect.objectContaining({
         id: 'stock-frozen-peas',
@@ -377,5 +377,28 @@ describe('LocalStorageMealPlannerRepository', () => {
 
     const reloaded = repository.importData(repository.exportData(restored));
     expect(reloaded.recipes.filter((recipe) => recipe.id === 'catalogue-miso-salmon')).toHaveLength(1);
+  });
+
+  it('migrates earlier data with no backup timestamp without losing saved household data', () => {
+    const repository = new LocalStorageMealPlannerRepository(new MemoryStorage());
+    const current = createInitialState();
+    const legacy = { ...current, schemaVersion: 7 };
+    delete (legacy as { lastBackupAt?: string | null }).lastBackupAt;
+
+    const restored = repository.importData(JSON.stringify(legacy));
+
+    expect(restored.schemaVersion).toBe(8);
+    expect(restored.lastBackupAt).toBeNull();
+    expect(restored.homeStockItems).toEqual(current.homeStockItems);
+    expect(restored.recipes).toEqual(current.recipes);
+  });
+
+  it('persists a valid backup timestamp in exported and restored data', () => {
+    const repository = new LocalStorageMealPlannerRepository(new MemoryStorage());
+    const state = { ...createInitialState(), lastBackupAt: '2026-08-10T10:15:00.000Z' };
+
+    const restored = repository.importData(repository.exportData(state));
+
+    expect(restored.lastBackupAt).toBe('2026-08-10T10:15:00.000Z');
   });
 });

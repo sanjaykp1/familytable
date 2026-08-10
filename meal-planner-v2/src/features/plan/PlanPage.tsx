@@ -9,6 +9,7 @@ import {
   Minus,
   Plus,
   RefreshCw,
+  RotateCcw,
   ShoppingBasket,
   Sparkles,
   Timer,
@@ -93,8 +94,10 @@ export function PlanPage({
     markCooked,
     markPlanReady,
     reopenPlan,
+    clearMealPlan,
   } = useApp();
   const [showStockOnly, setShowStockOnly] = useState(false);
+  const [showClearPlan, setShowClearPlan] = useState(false);
 
   const recipesById = useMemo(
     () => new Map(state.recipes.map((recipe) => [recipe.id, recipe])),
@@ -125,7 +128,7 @@ export function PlanPage({
   } = useWeatherWeek(state.preferences.weatherLocation);
 
   return (
-    <div className="page-stack">
+    <div className="page-stack page-stack--plan">
       <PageHeader
         eyebrow={isCurrentWeek(activeWeek) ? 'This week' : 'Planning ahead'}
         title="Dinner, decided."
@@ -144,6 +147,14 @@ export function PlanPage({
             <Button variant="primary" onClick={generateWeek} disabled={!state.recipes.length}>
               <Sparkles aria-hidden="true" size={18} />
               Plan my week
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => setShowClearPlan(true)}
+              disabled={decidedCount === 0}
+            >
+              <RotateCcw aria-hidden="true" size={18} />
+              Reset
             </Button>
           </>
         }
@@ -205,6 +216,14 @@ export function PlanPage({
             </div>
           </Card>
         </section>
+        <div className="week-toolbar__weather">
+          <WeatherPlanControl
+            location={state.preferences.weatherLocation}
+            forecastState={forecastState}
+            onConfigure={onOpenSettings}
+            onRetry={retryWeather}
+          />
+        </div>
         {!isCurrentWeek(activeWeek) ? (
           <Button variant="ghost" size="sm" onClick={() => goToWeek(startOfWeek())}>
             Back to this week
@@ -215,24 +234,6 @@ export function PlanPage({
       <Card
         className={`plan-card ${state.preferences.weatherLocation ? 'plan-card--with-weather' : ''}`}
       >
-        <div className="plan-card__header">
-          <div>
-            <h2>Evening plan</h2>
-            <p>Lock recipes you want to keep. Other plans stay put automatically.</p>
-          </div>
-          <div className="plan-card__header-tools">
-            <WeatherPlanControl
-              location={state.preferences.weatherLocation}
-              forecastState={forecastState}
-              onConfigure={onOpenSettings}
-              onRetry={retryWeather}
-            />
-            <span className={`status-chip status-chip--${currentPlan.status}`}>
-              {currentPlan.status === 'ready' ? 'Ready to shop' : 'Draft'}
-            </span>
-          </div>
-        </div>
-
         {!state.recipes.length ? (
           <EmptyState
             icon={ChefHat}
@@ -427,8 +428,14 @@ export function PlanPage({
         {state.recipes.length ? (
           <footer className="plan-card__footer">
             <div className="plan-progress">
-              <div>
-                <span style={{ width: `${(decidedCount / 7) * 100}%` }} />
+              <div
+                role="progressbar"
+                aria-label="Week plan progress"
+                aria-valuemin={0}
+                aria-valuemax={7}
+                aria-valuenow={decidedCount}
+              >
+                <span style={{ transform: `scaleX(${decidedCount / 7})` }} />
               </div>
               <small>
                 {decidedCount === 7
@@ -543,6 +550,31 @@ export function PlanPage({
               }}
             >
               Plan qualifying dinners
+            </Button>
+          </footer>
+        </Modal>
+      ) : null}
+
+      {showClearPlan ? (
+        <Modal title="Clear this meal plan?" onClose={() => setShowClearPlan(false)}>
+          <div className="confirm-copy">
+            <p>
+              This removes every dinner from {formatWeekRange(activeWeek)} and clears its shopping
+              list. Your saved recipes and Home Stock will stay unchanged.
+            </p>
+          </div>
+          <footer className="modal-actions">
+            <Button variant="ghost" onClick={() => setShowClearPlan(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                clearMealPlan();
+                setShowClearPlan(false);
+              }}
+            >
+              Clear meal plan
             </Button>
           </footer>
         </Modal>

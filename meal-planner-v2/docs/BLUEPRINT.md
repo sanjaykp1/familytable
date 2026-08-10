@@ -1,144 +1,126 @@
 # The Family Table v2 — architecture blueprint
 
-## A. Tech stack recommendation
+Updated: 10 August 2026
 
-- **React, TypeScript, and Vite:** the smallest mainstream stack that gives this project component structure, type safety, rapid local development, and a straightforward production build.
-- **Local storage behind a repository adapter:** fastest reliable persistence for a one-household MVP, while keeping a clean replacement point for IndexedDB or a sync API.
-- **Plain CSS with central tokens:** preserves the custom Nordic identity without coupling the product to a component framework.
-- **Vitest:** keeps meal generation, shopping aggregation, migrations, and imports testable as pure logic.
-- **A small hand-written service worker:** supports installation and offline shell loading without adding PWA framework complexity.
+This document describes the architecture that exists and the next three implementation prompts. Completed setup and Home Stock prompts are preserved in [archive/MVP_FOUNDATION_COMPLETED.md](./archive/MVP_FOUNDATION_COMPLETED.md); active product priority and release gates live in [BACKLOG.md](./BACKLOG.md).
+
+## A. Tech stack
+
+- **React, TypeScript and Vite:** a small mainstream client stack with type-safe domain logic and a static production build.
+- **Local storage behind `MealPlannerRepository`:** keeps the one-household MVP fast and offline while preserving a replacement boundary for IndexedDB or synchronized storage.
+- **Plain CSS with central tokens:** preserves the Nordic visual identity without coupling feature code to a component framework.
+- **Vitest plus Playwright:** pure logic remains fast to test; the small recovery-critical workflow gains real-browser coverage.
+- **Cloudflare Pages:** hosts the static app at one stable HTTPS origin with Git-connected deployments and production rollback.
 
 ## B. Architecture foundation
 
 ### Core entities and relationships
 
-**Plain English:** Recipes describe meals and their ingredients, while Home Stock describes food and household essentials currently kept at home. A weekly plan creates recipe requirements; the shopping list reconciles those requirements and recurring household needs with current stock. Stock items remain in the household catalogue even when their quantity is zero.
+**Plain English:** Recipes describe meals and their ingredients. Weekly plans reference recipes, Home Stock records confirmed household inventory, and shopping lines preserve both what recipes require and what remains to buy after confirmed stock is applied.
 
-**Technical specification:**
-
-- `Recipe` has many `Ingredient` values.
-- `MealPlan` is keyed by Monday `weekStart` and has seven `MealSlot` values.
-- Each `MealSlot` references zero or one `Recipe` by ID.
-- `HomeStockItem` stores a persistent food or household item, current quantity, unit, location, planning priority and optional replenishment rule. Quantity `0` is valid and never deletes the item.
-- `ShoppingItem` combines one or more explicit sources: recipe requirement, manual household need or accepted top-up suggestion.
-- Shopping reconciliation preserves gross recipe need, applies only compatible confirmed stock and exposes the remaining buy quantity.
-- `Preferences` controls household name, default servings, theme, and planning defaults.
+**Technical specification:** `Recipe` has structured `Ingredient` values. `MealPlan` is keyed by a Monday `weekStart` and contains seven `MealSlot` values. `HomeStockItem` stores a persistent food or household item, quantity, unit, location, planning priority and optional replenishment rule. `ShoppingItem` combines explicit recipe, manual and accepted top-up sources. All ingredient-to-stock decisions must pass through the shared pure ingredient-matching service introduced by active Prompt 1.
 
 ### Data layer
 
-**Plain English:** Data stays in the browser and continues working without an internet connection. Backup and restore protect against accidental browser-data loss.
+**Plain English:** Household data stays in the browser and works offline. Versioned migration plus JSON export/import protects continuity without adding an account or backend.
 
-**Technical specification:** `LocalStorageMealPlannerRepository` stores a versioned `AppState` document under `family-table:v2`. The next schema migration adds `homeStockItems` to core `AppState`, because stock must work without Oda and be included in JSON backup/restore. Every load passes through a migration and validation boundary. Features depend on `MealPlannerRepository`, not browser storage.
+**Technical specification:** `LocalStorageMealPlannerRepository` stores a schema-versioned `AppState` document under `family-table:v2`; schema version 7 already includes Home Stock and replenishment state. Every load and import passes through normalization and validation. Feature components depend on `MealPlannerRepository`, never `localStorage` directly. The persistence-hardening phase may add backup metadata through the next `AppState` schema migration, but must not bypass the repository.
 
 ### Authentication and identity
 
-**Plain English:** No account is required for the local MVP. The device is the identity boundary.
+**Plain English:** No account is required for the local MVP. The browser profile and origin are the current identity and storage boundary.
 
-**Technical specification:** No authentication packages or user records. A future `householdId` and authenticated sync repository can be added without changing domain entities.
+**Technical specification:** Do not add authentication packages or user records. A future authenticated sync adapter may introduce a `householdId` without changing domain calculations or feature components.
 
 ### API and service patterns
 
-**Plain English:** There is no network API yet, but business rules are kept outside the screens so a future API does not require rewriting the interface.
+**Plain English:** There is no application backend. Business rules remain outside screens so persistence or hosting can change without rewriting the UI.
 
-**Technical specification:** Feature components call application-context commands. Commands invoke pure functions in `src/domain` and persist via `MealPlannerRepository`. Future HTTP endpoints use `/api/v1/<resource>` and `{data,error,meta}` responses.
+**Technical specification:** Feature components call application-context commands. Commands invoke pure functions in `src/domain` and persist through `MealPlannerRepository`. The shared ingredient matcher owns canonical naming, aliases, compatible unit conversion, allocations and review reasons; shopping and stock planning consume its typed results.
 
 ### External integrations
 
-**Plain English:** Oda and AI are deferred, but their code already has a designated home and cannot leak into the recipe or planning screens.
+**Plain English:** Oda, AI and household sync remain deferred. Cloudflare Pages hosts only static assets and does not receive household data.
 
-**Technical specification:** Contracts live in `src/integrations`. Oda product matching maps `Ingredient` to `ProductMapping`; write operations require a preview and explicit confirmation. Credentials are server-only in a hosted edition.
+**Technical specification:** Future external contracts live under `src/integrations` and integration state remains separate from core `AppState`. Credentials never enter Vite client code or browser storage. Oda-specific work continues to follow [ODA_MVP_DELIVERY_PLAN.md](./ODA_MVP_DELIVERY_PLAN.md).
 
 ### Error handling
 
-**Plain English:** Expected mistakes get a clear inline message; unexpected failures show a recoverable application error; storage problems never silently claim that data was saved.
+**Plain English:** Expected mistakes receive a clear message; unexpected rendering failures have a recovery screen; storage failures never pretend data was saved.
 
-**Technical specification:** Domain validation throws `DomainError`. Provider commands catch repository failures, retain current memory state, and emit a toast. `AppErrorBoundary` catches render failures.
+**Technical specification:** Domain validation throws `DomainError`. Repository failures become persistent storage warnings while retaining in-memory state. Provider commands emit shared toasts. `AppErrorBoundary` catches render failures. Storage-persistence denial is an expected browser decision, not an exception.
 
-### Design system
+### Design system and reusable components
 
-**Plain English:** The design has one source of truth, so changing the primary colour or spacing updates the whole product.
+**Plain English:** One token system keeps the application visually consistent. Shared controls prevent each feature from inventing its own interaction patterns.
 
-**Technical specification:** `src/styles/tokens.css` defines warm neutral surfaces, lingonberry actions, sage success, seasonal accents, typography, an eight-point spacing scale, radii, shadows, and motion durations. Components reference variables only.
-
-### Reusable components
-
-`Button`, `Card`, `Modal`, `EmptyState`, `PageHeader`, `ToastViewport`, `SegmentedControl`, `QuantityStepper`, and `AppShell`.
+**Technical specification:** `src/styles/tokens.css` defines colour, typography, spacing, radius, shadow and motion values. Components reference those variables only. Continue using the existing `Button`, `Card`, `Modal`, `EmptyState`, `PageHeader`, `ToastViewport`, `SegmentedControl`, `QuantityStepper` and `AppShell`; extend them only when the new state is reusable.
 
 ### Folder structure
 
-See `AGENTS.md`. Domain logic, repositories, application composition, feature screens, integrations, UI primitives, and tests are separated explicitly.
+```text
+src/
+  app/                    application provider, shell and composition
+  components/ui/          reusable visual primitives
+  domain/                 pure entities and business logic
+  features/<feature>/     screens and feature-specific components
+  integrations/           future external-system boundaries
+  repositories/           persistence contracts and adapters
+  styles/                 tokens and shared component styles
+e2e/                      Playwright user-journey tests
+docs/archive/             superseded plans and completion records
+```
 
 ### Testing approach
 
-Vitest tests the happy path, an edge case, and a regression/error path for planning, shopping aggregation, stock allocation, zero-quantity persistence and persistence migrations. Browser QA covers desktop, 390px mobile, light mode, dark mode, offline reload and backup/restore.
+Vitest remains the first line of defence for domain allocation, migrations and feature interactions. Every domain change needs a happy path, an edge case and an error or regression case. Playwright covers only high-value browser journeys: persistence through reload, export/reset/import recovery, offline shell and the deployed production smoke path. `npm run check` remains the complete local quality gate.
 
 ### Deployment
 
-The MVP runs with `npm run dev`, builds to static files with `npm run build`, and is deployed from `main` to Cloudflare Pages. Use `meal-planner-v2` as the project root and `dist` as the output directory; no backend environment variables or paid services are required.
+Build the static app from repository subdirectory `meal-planner-v2` with `npm run build` and publish `dist` from `main` to Cloudflare Pages using Node.js 24. The production URL must be documented after the first successful deployment. No backend variables or paid service are required.
 
-## C. Phased implementation prompts
+## C. Active phased implementation prompts
 
-### Phase 0 — repository and delivery hygiene
+Run these prompts one at a time and in order.
 
-**Goal:** make every later implementation phase recoverable, reviewable, and automatically checked before adding more product scope.
+### Prompt 1 — shared ingredient matching and locked-meal reservation
 
-**Recommended model:** `gpt-5.6-terra` with medium reasoning. This is a bounded setup task with clear acceptance criteria; reserve `gpt-5.6-sol` with high reasoning for data migrations, synchronization, security, and unfamiliar integrations.
+**Recommended model:** `gpt-5.6-sol` with high reasoning.
 
-**Implementation prompt:**
+> Work in `meal-planner-v2` and read `AGENTS.md`, `docs/BACKLOG.md`, `src/domain/types.ts`, `src/domain/shopping.ts`, `src/domain/stockPlanning.ts` and their tests before editing. Build one pure shared ingredient-matching service under `src/domain`; do not put matching logic in React components. Define a canonical ingredient and explicit alias registry that handles the regression pair `tomato`/`tomatoes` without using unsafe generic stemming. Normalize case and whitespace. Support exact linear conversion only for `g`/`kg` and `ml`/`l`, using stable base-unit arithmetic. Never infer conversions for cans, bags, bunches, pieces, packs, mass-to-volume or unknown units. Aggregate multiple compatible Home Stock rows for one canonical ingredient and return per-row allocations. Return typed exact, alias, unmatched and review results with stable reason codes for ambiguity, unknown quantities and incompatible units.
+>
+> Refactor `buildShoppingList`, stock-only eligibility and stock-only generation to consume this service so the same input receives the same match classification in both flows. Shopping may apply partial confirmed coverage; strict stock-only eligibility requires complete confirmed coverage. Preserve gross need, stock applied, buy quantity, shopping ticks, top-up reasons and the no-automatic-deduction rule.
+>
+> Before generating meals for open days, reserve confirmed compatible quantities required by locked recipe slots in deterministic `DAY_KEYS` order. Locked allocations reduce the ledger available to generated meals but do not mutate persisted Home Stock. Add focused tests for plural aliases, both safe unit families in both directions, multiple compatible stock rows, unsupported discrete units, ambiguity/review, parity between shopping and stock planning, and a regression proving stock used by a locked meal cannot also fund a generated stock-only meal. Include insufficient locked-stock behavior without silently claiming availability. Run `npm run check`.
 
-> Work from the Git repository root. Do not build or change product features. Inspect the current Git status, existing remote, ignore rules, package scripts, lockfile, and documentation before editing. Add a root `.gitignore` that excludes credentials, local environment files, dependencies, build output, coverage, TypeScript build metadata, operating-system files, and local planning artifacts without deleting them. Add a concise root `README.md` with the project purpose, exact setup commands, full quality command, repository layout, local-data warning, and contribution workflow. Pin the supported Node.js major version in `meal-planner-v2/.nvmrc` and `package.json`. Add `.github/workflows/ci.yml` so pushes to `main` and pull requests run `npm ci` and `npm run check` from `meal-planner-v2`, with read-only repository permissions and npm caching. Use only current official GitHub Actions major versions. Confirm that no generated files or secrets would be committed, run the full quality check, and inspect the staged diff. If the supplied GitHub repository is empty, connect it as `origin`, create one initial commit, and push `main`. Stop rather than overwriting or force-pushing any remote history.
+### Prompt 2 — persistent-storage UX and browser recovery test
 
-**Acceptance criteria:**
+**Recommended model:** `gpt-5.6-terra` with high reasoning.
 
-- `origin` points to the intended GitHub repository and `main` tracks `origin/main`.
-- The initial commit contains source, tests, documentation, lockfiles, and CI, but no credentials, dependency folders, build output, or local-only artifacts.
-- `npm run check` passes locally and the GitHub `CI` workflow passes on the first push.
-- Repository rules can require the `check` status before merging after the first successful workflow run.
+> Work in `meal-planner-v2` and read `AGENTS.md`, `docs/BACKLOG.md`, the repository contract and adapter, `AppProvider`, `SettingsPage`, current migration tests and the complete quality scripts before editing. Keep the MVP local-first and do not add a backend, account or sync service.
+>
+> Add a typed browser-storage capability wrapper rather than reading `navigator.storage` throughout the UI. In Settings, show whether persistence is already granted and provide an explicit action that calls `navigator.storage.persist()` when supported. Represent persistent, not granted, unsupported and failed-to-check states honestly. Denial must not block normal use and the copy must explain that persistent storage reduces eviction risk but is not a backup.
+>
+> Add versioned `lastBackupAt` metadata through the repository boundary. Set it only after a valid export payload has been prepared for download, display it in Settings and show a non-blocking reminder when there has never been a backup or it is older than seven days. Add time-controlled unit tests for the reminder and migration/round-trip tests for the metadata.
+>
+> Install and configure Playwright with Chromium, Firefox and WebKit projects. Add one user-visible recovery smoke test under `e2e/` that creates bananas at quantity zero, adds bananas to shopping, marks a stocked ingredient `Use soon`, generates a stock-only meal, reloads and verifies all state, exports a backup, resets through the UI, imports that downloaded backup and verifies full restoration. Use real browser storage and UI for the recovery flow; stub the persistence-permission result only in focused deterministic tests. Add the browser test to CI and the documented quality workflow without weakening existing checks. Run the unit tests, all Playwright projects and `npm run check`.
 
-### Prompt 1 — project setup
+### Prompt 3 — production deployment and dogfood gate
 
-Create the Vite React TypeScript project in `meal-planner-v2`, install the dependencies declared in `package.json`, create the folder structure in `AGENTS.md`, configure ESLint, Prettier, Vitest, design tokens, the manifest, and service worker. Do not build features or screens yet.
+**Recommended model:** `gpt-5.6-terra` with medium reasoning.
 
-### Prompt 2 — foundation
+> Read `AGENTS.md`, `docs/BACKLOG.md`, `docs/DOGFOOD_LOG.md`, both READMEs, package scripts and the GitHub Actions workflow. Do not add product features. Confirm the working tree and `npm run check` are clean before deployment. Connect the existing GitHub repository to Cloudflare Pages with `main` as production, `meal-planner-v2` as project root, `npm run build` as build command, `dist` as output and Node.js 24. Do not add household data, credentials or runtime secrets to the client.
+>
+> After the first production deployment succeeds, record the stable HTTPS URL in both READMEs and verify the deployed version, commit, service-worker/offline reload, JSON export/import and the Playwright recovery smoke against that origin. Document how to identify and roll back to the previous successful production deployment, but do not perform a rollback unless testing requires it and the target is confirmed. Start the dated two-cycle observation log in `docs/DOGFOOD_LOG.md`. During the trial record only repeated manual corrections, failed ingredient matches, tedious stock quantities, rejected meal suggestions with reasons and repeatedly manual household items. Do not implement the hypothesized recipe-import feature until the second cycle is complete and the evidence is summarized.
 
-Implement the entities in `src/domain/types.ts`, pure date/planning/shopping modules, the `MealPlannerRepository` contract, the versioned local-storage adapter, application provider, shared UI primitives, error boundary, toast pattern, and application shell. Add repository and domain tests. Do not build user-facing feature screens yet.
+## D. Persistent project configuration
 
-### Prompt 3 — first MVP feature
-
-Build the weekly planner in `src/features/plan/PlanPage.tsx`. It must navigate weeks, assign recipes, generate unlocked days, preserve locked days, mark a plan ready to shop, and mark meals cooked. Use only shared components and provider commands. Add happy-path, locked-day, and empty-library tests, then wire the screen into navigation.
-
-### Next prompt 4A — Home Stock domain and migration
-
-**Recommended model:** `gpt-5.6-sol` with high reasoning because this changes persisted data and shopping calculations.
-
-> Implement the local Home Stock domain without building its screens. Read `AGENTS.md`, `docs/BACKLOG.md` and the existing repository, types, shopping logic and migration tests first. Add a `HomeStockItem` entity to `src/domain/types.ts` with a stable ID, name, kind (`food` or `household`), category, location, quantity (`number | null`, where zero is valid and null means unknown), unit, planning priority (`normal` or `use-soon`), optional reorder point, optional target quantity, active/archive state and updated timestamp. Add `homeStockItems` to `AppState` through the next schema version and migrate existing version 4 data to an empty array without losing recipes, plans, shopping lists or preferences. Extend shopping-domain output so every line can retain gross recipe need, confirmed stock applied, remaining buy quantity and explicit sources (`recipe`, `manual`, or `stock-top-up`). In v1, allocate stock only when normalized names and units are compatible; otherwise mark the line for review and do not subtract. Never delete a Home Stock item when quantity reaches zero and never create a stock deduction merely because a meal is planned or marked cooked. Add tests for migration, backup round-trip, zero-quantity persistence, partial stock, multiple recipes sharing one item, incompatible units and preservation of shopping ticks. Do not build user-facing screens yet. Run `npm run check`.
-
-### Next prompt 4B — Home Stock and reconciliation UI
-
-**Recommended model:** `gpt-5.6-terra` with high reasoning because the domain rules are established and this is bounded interaction work.
-
-> Build the Home Stock interface using the domain and repository contracts already present. Keep the four-item mobile navigation; inside the existing Shop screen add a shared segmented control with `To buy` and `At home`. `At home` must support search, food/household filtering, location filtering, add, adjust quantity, mark used up, toggle `Use soon`, archive and restore. A quantity of zero must remain visible and show a one-action `Add to shop` control. `To buy` must show `Recipe need − At home = Buy` for reconciled lines, preserve explanations and show review controls for uncertain matches. Allow manual shopping items such as toilet paper or dishwasher tablets without attaching them to recipes. Do not implement automatic replenishment suggestions, automatic consumption, Oda import or a fifth navigation destination. Add happy-path, zero-stock, use-soon, manual-household-item, uncertain-match and offline-reload tests. Run `npm run check`.
-
-### Next prompt 4C — Shopping v2 replenishment suggestions
-
-**Recommended model:** `gpt-5.6-sol` with high reasoning because overlapping recipe demand and replenishment targets require careful quantity rules.
-
-> Add opt-in replenishment suggestions to the existing Home Stock and shopping workflow. An active item may have a reorder point and target quantity. When current quantity is at or below the reorder point, create a reviewable suggestion for `target − current`; never add it silently to the shopping list. Provide accept, dismiss and disable-rule actions. When recipe demand and a top-up suggestion refer to the same compatible item and unit, the buy quantity is the larger of the recipe shortfall and target shortfall, not their sum; keep both reasons visible. Unknown quantities, incompatible units and uncertain matches require review. Add tests using bananas at zero with reorder point two and target six, overlapping recipe demand, dismissed suggestions, disabled rules and backup round-trip. Run `npm run check`.
-
-### Next prompt 4D — cook-from-stock and use-soon planning
-
-**Recommended model:** `gpt-5.6-sol` with high reasoning because strict ingredient allocation and plan constraints must not create false “no shopping needed” claims.
-
-> Add pure domain functions for strict stock-only recipe eligibility and use-soon planning. Work only from saved recipes; do not call an LLM or invent recipes. A recipe is stock-only eligible only when every required ingredient can be matched to confirmed Home Stock with sufficient quantity and compatible units. Unknown quantities, insufficient amounts, incompatible units and ambiguous matches make the recipe ineligible, with a structured explanation of what failed. Rank eligible recipes higher when they consume items marked `use-soon`. Add an explicit `Use in next plan` action that passes selected Home Stock item IDs as constraints to meal generation; if no valid recipe can satisfy a constraint, explain that and leave the plan unchanged. Show the qualifying ingredient allocation and the reason for each suggestion, but do not reserve, deduct or clear stock until the user separately confirms an adjustment. Add tests for a fully covered recipe, one missing ingredient, insufficient quantity, shared stock allocation, incompatible units, multiple use-soon items, an impossible must-use constraint and deterministic ranking. Then add a bounded UI entry point from Plan or Recipes named `Cook from what I have`, plus `Use soon` and `Use in next plan` controls in the `At home` view. Run `npm run check`.
-
-## D. Persistent tool configuration
-
-The persistent project rules are in `AGENTS.md`. They define the stack, folder structure, domain relationships, data boundary, visual tokens, shared components, testing expectations, error pattern, and future integration constraints.
+`AGENTS.md` is the project’s long-term engineering configuration. It defines stack constraints, folder ownership, data rules, visual tokens, error handling, testing expectations and integration boundaries. Update it only when an architectural rule changes, not for temporary roadmap status.
 
 ## E. Getting unstuck
 
-- **A change broke something:** run `npm run check`, identify the first failing test, and fix only the affected domain or component.
-- **Adding a deferred feature:** first identify which entities it reads or writes and which existing feature pattern it follows.
-- **The design is drifting:** audit against `tokens.css` and the primitives in `components/ui`.
-- **The project feels messy:** start from `AGENTS.md`; do not reorganize unrelated files while fixing a feature.
-- **A new integration needs credentials:** stop and introduce a server boundary; never place credentials in Vite environment variables.
+- **A change broke something:** run `npm run check`, identify the first failure and fix only the affected domain or component.
+- **A browser smoke test is flaky:** reproduce in one Playwright project, replace timing assumptions with user-visible state assertions, then rerun all three projects.
+- **Matching behavior diverges:** remove local name/unit logic and route the decision through the shared ingredient-matching service.
+- **Local data looks unsafe:** export a JSON backup before clearing or changing browser storage; persistent-storage permission is not recovery.
+- **A deferred feature looks tempting:** add its observation to the dogfood log and wait for the two-cycle review unless it is a correctness or data-loss defect.

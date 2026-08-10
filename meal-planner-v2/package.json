@@ -16,11 +16,12 @@
     "build:companion": "npm run build --workspace @family-table/companion",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "test:companion": "npm run test --workspace @family-table/companion",
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "check": "npm run lint && npm run test && npm run test:companion && npm run build && npm run build:companion"
+    "check": "npm run lint && npm run test && npm run test:companion && npm run build && npm run build:companion && npm run test:e2e"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",
@@ -31,6 +32,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.58.2",
+    "@playwright/test": "^1.62.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
