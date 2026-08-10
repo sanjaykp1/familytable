@@ -2,7 +2,7 @@
 
 ## Product boundary
 
-The MVP is a local-only, offline-capable family dinner planner. It has no backend, accounts, analytics, or external writes. Persistence must remain behind `MealPlannerRepository` so a future household-sync adapter can replace local storage without changing feature code.
+The MVP is a local-only, offline-capable family meal and household-supply planner. Its core loop is plan meals, check Home Stock, and buy the remaining recipe and household needs. It has no backend, accounts, analytics, or external writes. Persistence must remain behind `MealPlannerRepository` so a future household-sync adapter can replace local storage without changing feature code.
 
 ## Stack
 
@@ -30,6 +30,14 @@ The MVP is a local-only, offline-capable family dinner planner. It has no backen
 - UI components never access `localStorage` directly.
 - Import validates data before replacing the current state.
 - Weather stores only a user-selected location. Forecast failures must never block local planning.
+- Home Stock is core planner data and must work without Oda or any companion process.
+- A Home Stock item persists when its quantity becomes zero. Only an explicit archive or delete removes it from the active catalogue.
+- Keep gross recipe need, confirmed stock applied and remaining buy quantity distinct and visible.
+- Stock is subtracted only for compatible confirmed matches. Unknown amounts or incompatible units require review.
+- Planning, shopping and marking a meal cooked never deduct stock automatically.
+- Replenishment rules create reviewable suggestions; acceptance is required before they join the shopping list.
+- Strict stock-only meal suggestions use saved recipes and require every ingredient to be covered by confirmed compatible stock. Do not assume untracked staples or hide shortages.
+- `Use soon` affects explainable recipe ranking. `Use in next plan` is an explicit constraint and must fail visibly if no saved recipe can satisfy it.
 
 ## UI rules
 
@@ -38,6 +46,7 @@ The MVP is a local-only, offline-capable family dinner planner. It has no backen
 - Interactive targets must be at least 44×44px.
 - Every icon-only button requires an accessible label and tooltip/title.
 - Mobile navigation has four primary destinations: Plan, Recipes, Shop, Settings.
+- Home Stock lives under Shop as an `At home` view; do not add a fifth primary destination for the MVP.
 - Destructive actions require an in-product confirmation, not `window.confirm()`.
 
 ## Error pattern
@@ -55,14 +64,13 @@ The MVP is a local-only, offline-capable family dinner planner. It has no backen
 
 ## Future integrations
 
-- Use `docs/ODA_MVP_DELIVERY_PLAN.md` as the Oda/Home Stock release order. Do not start a later release before the preceding test gate passes.
+- Use `docs/ODA_MVP_DELIVERY_PLAN.md` for Oda-connected work only. Core local Home Stock is Phase 1 product work and must not depend on Oda availability.
 - Keep integration state in a separate `IntegrationProvider` and `IntegrationRepository`; do not add it to `AppProvider` or the whole-state localStorage document.
 - Every external capability is feature-detected and schema-validated.
 - Real Oda tests are manual, opt-in, and read-only unless the user explicitly approves a named cart mutation test.
 - Product matching is deterministic and reviewable. Do not require a production LLM.
 - No imported or ambiguous recipe ingredient contributes to a real cart until it has passed review.
-- Home Stock includes cupboard, fridge, and freezer. Imported purchases are proposed additions, and all movements are reversible.
-- Original recipe requirements remain visible even when Home Stock reduces the buy quantity.
+- Oda-imported purchases are proposed additions to existing Home Stock, and all confirmed movements are reversible.
 - Oda access belongs behind the local companion. Credentials and cookies must never enter React, browser storage, browser responses, or logs.
 - The companion binds only to loopback and exposes allowlisted business operations, never a generic MCP passthrough.
 - A cart write requires a fresh preview, explicit confirmation, and an idempotency key. It never checks out, chooses delivery, replaces the cart, or automatically retries an ambiguous outcome.

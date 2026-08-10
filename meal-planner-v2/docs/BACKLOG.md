@@ -4,7 +4,7 @@ Updated: 9 August 2026
 
 ## Product direction
 
-The product should reduce the mental load of deciding what a household will eat, preparing for it, and buying the right amount. The core planning loop must remain fast and reliable without an account. Integrations are optional enhancements, never prerequisites.
+The product should reduce the mental load of deciding what a household will eat and keeping common food and household essentials in stock. The core loop is plan, check what is already at home, and buy only what is still needed. It must remain fast and reliable without an account; integrations are optional enhancements, never prerequisites.
 
 The researched Oda architecture, prerequisites and phased delivery gates are documented in
 [ODA_INTEGRATION_PLAN.md](./ODA_INTEGRATION_PLAN.md). The incremental implementation sequence and
@@ -31,26 +31,59 @@ Goal: make all product work recoverable and automatically checked before expandi
 3. Pin the Node.js major version and document the local setup workflow
 4. Run lint, client tests, companion tests and both builds in GitHub Actions
 5. Require the CI check before merging once the first workflow run is green
+6. Deploy the static app to Cloudflare Pages from `main` for a stable free production URL and deployment rollback
 
-### Phase 1 — real household adoption
+### Phase 1 — personal household loop
 
-Goal: replace starter content with the household's actual routines.
+Goal: make the app useful every week by reconciling meal requirements and recurring household needs with what is already at home.
 
-1. **Recipe onboarding and import**
+1. **Persistent Home Stock**
+   - Track food and basic household items in cupboard, fridge, freezer, bathroom, cleaning storage or another location
+   - Keep common items in the catalogue when their quantity reaches zero; zero is a valid stock state, not deletion
+   - Support exact quantities where useful and an unknown/estimated state where counting would add friction
+   - Add, adjust, mark used up, archive and restore items without requiring Oda
+2. **Stock-aware shopping v1**
+   - Show `Recipe need − confirmed stock = Buy` while preserving the original recipe requirement
+   - Subtract only exact matches with compatible units; uncertain matches remain visible for review
+   - Allow any zero-stock or household item to be added to the shopping list in one action
+   - Support manual shopping needs that do not come from recipes
+   - Never deduct stock automatically when planning, shopping or marking a meal cooked
+   - Acceptance: after planning a week, the user can reconcile the list with Home Stock in under two minutes
+3. **Recipe onboarding and import**
    - First-run choice to keep or remove starter recipes
    - Paste structured recipe text with an editable review step
    - Duplicate detection before saving
    - Acceptance: a family can add ten real recipes in under fifteen minutes
-2. **Per-night planning details**
+
+### Phase 2 — use-what-we-have planning and Shopping v2
+
+Goal: turn confirmed Home Stock into useful meal choices and reduce repetitive stock checking without silently deciding what the household should buy.
+
+1. **Cook from Home Stock**
+   - Suggest saved recipes that can be made entirely from confirmed quantities already at home
+   - Strict mode excludes any recipe with a missing ingredient, insufficient quantity or unresolved unit mismatch
+   - Show why a recipe qualifies and how much of each item it would use
+   - Do not invent a new recipe or quietly assume untracked ingredients in the first version
+2. **Use-soon planning priority**
+   - Let the user mark a Home Stock item as `Use soon`, optionally because it is approaching spoilage
+   - Offer `Use in next plan` as a stronger planning constraint when the user wants a specific item included
+   - Boost or require saved recipes containing those items and explain the resulting meal choice
+   - Keep the marker until the user clears it or confirms a stock adjustment; planning alone never clears it
+3. **Replenishment suggestions**
+   - Optional reorder point and target quantity per persistent item
+   - Example: bananas at `0`, reorder point `2`, target `6` produces a suggestion to buy `6`
+   - Suggestions require accept or dismiss; they do not silently enter the active shopping list
+   - When recipe demand and a top-up rule overlap, buy the larger requirement rather than adding them together
+4. **Per-night planning details**
    - Override servings for an individual night
    - Optional note such as “grandparents visiting”
    - Freezer/pantry meal as a non-shopping plan outcome
-3. **Planning quality controls**
+5. **Planning quality controls**
    - Choose busy nights and favour low-attention recipes there
    - Balance vegetarian, fish and family favourites across a week
    - Explain why each generated meal was selected
 
-### Phase 2 — Oda feasibility and read-only pilot
+### Phase 3 — Oda feasibility and read-only pilot
 
 Goal: prove the external integration safely before allowing any cart writes.
 
@@ -59,7 +92,7 @@ Goal: prove the external integration safely before allowing any cart writes.
 3. Conditional product search and connection-health UI
 4. Order-history pilot when the upstream capability is available
 
-### Phase 3 — reviewed Oda cart pilot
+### Phase 4 — reviewed Oda cart pilot
 
 Goal: reduce the work between an approved plan and a cart without automating purchasing decisions.
 
@@ -68,7 +101,7 @@ Goal: reduce the work between an approved plan and a cart without automating pur
 3. Confirmed, idempotent merge into the existing Oda cart
 4. Checkout, payment and delivery-slot selection remain in Oda
 
-### Phase 4 — preparation and inventory
+### Phase 5 — preparation and adaptive planning
 
 Goal: turn a meal plan into a practical household workflow.
 
@@ -76,16 +109,12 @@ Goal: turn a meal plan into a practical household workflow.
    - Sunday or previous-evening make-ahead checklist
    - Group prep tasks across recipes
    - Reminders remain opt-in and local where possible
-2. **Pantry and freezer**
-   - Simple quantities and “running low” state
-   - Never deduct ingredients automatically without confirmation
-   - Prefer recipes that use available ingredients
-3. **Weather-aware suggestions**
+2. **Weather-aware suggestions**
    - Explicit household rules, not hidden automatic behavior
    - Examples: barbecue on dry evenings, soup below a chosen temperature, low-effort meals during severe weather
    - Show the reason when weather changes a suggestion
 
-### Phase 5 — shared household product
+### Phase 6 — shared household product
 
 Goal: support two or more people without losing the simplicity of the local MVP.
 
@@ -96,25 +125,32 @@ Goal: support two or more people without losing the simplicity of the local MVP.
 
 ## Prioritised backlog
 
-| Priority | Feature                                   | Status   | Why it matters                                                                |
-| -------- | ----------------------------------------- | -------- | ----------------------------------------------------------------------------- |
-| P0       | Versioned data migrations and JSON backup | Shipped  | Protects local household data                                                 |
-| P0       | Recipe effort and make-ahead model        | Shipped  | Makes time estimates useful rather than misleading                            |
-| P1       | Recipe onboarding/import                  | Next     | Starter recipes are not the household's real library                          |
-| P1       | Per-night servings and notes              | Planned  | Real weeks include guests and different appetites                             |
-| P1       | Freezer/pantry meal outcome               | Planned  | Different from leftovers and should not create shopping items                 |
-| P1       | Make-ahead preparation view               | Planned  | Converts recipe metadata into saved time                                      |
-| P1       | Oda compatibility and security spike      | No-go    | Pinned community MCP fails product tests; fake-provider foundation is safe     |
-| P2       | Oda product matching and cart review      | Planned  | Useful once recipe ingredients have passed structured review                   |
-| P2       | Pantry and freezer inventory              | Planned  | Improves shopping and reduces waste                                           |
-| P2       | Weather-aware planning rules              | Planned  | Useful only after the forecast display earns trust                            |
-| P2       | Recipe URL import                         | Research | Browser CORS and inconsistent recipe markup require a careful import boundary |
-| P3       | Household synchronization                 | Later    | Requires accounts, backend and conflict handling                              |
+| Priority | Feature                                      | Status   | Why it matters                                                                |
+| -------- | -------------------------------------------- | -------- | ----------------------------------------------------------------------------- |
+| P0       | Versioned data migrations and JSON backup    | Shipped  | Protects local household data                                                 |
+| P0       | Persistent Home Stock catalogue              | Next     | Common items must remain useful even when their quantity is zero               |
+| P0       | Stock-aware shopping reconciliation          | Next     | Answers what still needs to be bought after checking the home                  |
+| P1       | Manual household needs                       | Next     | Shopping includes toiletries and cleaning supplies, not only recipe items      |
+| P1       | Recipe onboarding/import                     | Planned  | Starter recipes are not the household's real library                          |
+| P1       | Cook entirely from Home Stock                | Planned  | Produces a useful meal without creating a new shopping requirement             |
+| P1       | Use-soon meal-plan priority                  | Planned  | Helps consume food before it spoils                                            |
+| P1       | Replenishment suggestions                    | Planned  | Reduces repeated checking while keeping additions reviewable                   |
+| P1       | Per-night servings, notes and stock meal      | Planned  | Real weeks include guests and meals that should not generate shopping          |
+| P1       | Make-ahead preparation view                  | Planned  | Converts recipe metadata into saved time                                      |
+| P2       | Oda compatibility and security spike         | No-go    | Pinned community MCP fails product tests; fake-provider foundation is safe     |
+| P2       | Oda product matching and cart review         | Planned  | Useful once recipe ingredients have passed structured review                   |
+| P2       | Weather-aware planning rules                 | Planned  | Useful only after the forecast display earns trust                            |
+| P2       | Recipe URL import                            | Research | Browser CORS and inconsistent recipe markup require a careful import boundary |
+| P3       | Household synchronization                    | Later    | Requires accounts, backend and conflict handling                              |
 
 ## Product rules
 
 - Do not hide automation. Show why a recipe or product was suggested.
 - Wrongly removing an ingredient is worse than leaving an extra item for review.
+- A Home Stock item at zero remains a household item until the user explicitly archives or deletes it.
+- Replenishment rules create suggestions, not silent shopping-list additions.
+- “Cook from Home Stock” means every required ingredient is confirmed available; it does not hide shortages or assume untracked staples.
+- A `Use soon` marker affects ranking or an explicit planning constraint, but never consumes stock by itself.
 - Weather and integrations must fail gracefully without blocking planning.
 - Prefer structured fields for behavior-driving data; use free-text tags for discovery only.
 - Add complexity only when it removes more household effort than it creates.

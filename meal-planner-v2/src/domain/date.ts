@@ -64,5 +64,9 @@ export function seasonForWeek(weekStart: string): Season {
 }
 
 export function daysBetween(fromIso: string, toIso: string): number {
-  return Math.floor((toLocalDate(toIso).getTime() - toLocalDate(fromIso).getTime()) / DAY_MS);
+  const calendarDay = (isoDate: string) => {
+    const date = toLocalDate(isoDate);
+    return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  };
+  return Math.round((calendarDay(toIso) - calendarDay(fromIso)) / DAY_MS);
 }

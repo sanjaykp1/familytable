@@ -15,6 +15,10 @@ export type PlanStatus = 'draft' | 'ready';
 export type MealSlotKind = 'recipe' | 'leftovers' | 'eat-out' | 'skip';
 export type CookAttention = 'mostly-hands-off' | 'check-occasionally' | 'hands-on';
 export type MakeAhead = 'none' | 'prep-ahead' | 'fully-ahead';
+export type HomeStockKind = 'food' | 'household';
+export type HomeStockPlanningPriority = 'normal' | 'use-soon';
+export type ShoppingItemSource = 'recipe' | 'manual' | 'stock-top-up';
+export type ReplenishmentSuggestionStatus = 'dismissed' | 'accepted';
 export type IngredientCategory =
   'produce' | 'protein' | 'dairy' | 'bakery' | 'pantry' | 'frozen' | 'other';
 
@@ -64,11 +68,35 @@ export interface MealPlan {
 export interface ShoppingItem {
   id: string;
   name: string;
-  quantity: number | null;
+  grossRecipeNeed: number | null;
+  confirmedStockApplied: number;
+  remainingBuyQuantity: number | null;
   unit: string;
   category: IngredientCategory;
+  sources: ShoppingItemSource[];
   sourceRecipeIds: string[];
+  sourceHomeStockItemIds?: string[];
+  stockTopUpQuantity?: number | null;
+  requiresReview: boolean;
   checked: boolean;
+}
+
+export interface HomeStockItem {
+  id: string;
+  name: string;
+  kind: HomeStockKind;
+  category: string;
+  location: string;
+  frozen: boolean;
+  quantity: number | null;
+  unit: string;
+  planningPriority: HomeStockPlanningPriority;
+  reorderPoint?: number | null;
+  targetQuantity?: number | null;
+  replenishmentRuleEnabled?: boolean;
+  replenishmentSuggestionStatus?: ReplenishmentSuggestionStatus;
+  archived: boolean;
+  updatedAt: string;
 }
 
 export interface Preferences {
@@ -90,11 +118,26 @@ export interface WeatherLocation {
 }
 
 export interface AppState {
-  schemaVersion: 4;
+  schemaVersion: 7;
   recipes: Recipe[];
   plans: Record<string, MealPlan>;
   shoppingLists: Record<string, ShoppingItem[]>;
+  homeStockItems: HomeStockItem[];
   preferences: Preferences;
+}
+
+export interface ReplenishmentSuggestion {
+  id: string;
+  homeStockItemId: string;
+  name: string;
+  currentQuantity: number | null;
+  reorderPoint: number;
+  targetQuantity: number;
+  suggestedQuantity: number | null;
+  unit: string;
+  category: IngredientCategory;
+  requiresReview: boolean;
+  reviewReason: 'unknown-quantity' | 'invalid-target' | null;
 }
 
 export const CATEGORY_LABELS: Record<IngredientCategory, string> = {

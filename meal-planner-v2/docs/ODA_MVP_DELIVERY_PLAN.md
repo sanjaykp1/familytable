@@ -1,9 +1,13 @@
 # Oda + Home Stock MVP delivery plan
 
-Updated: 7 August 2026
+Updated: 9 August 2026
 
 This is the executable delivery plan for the architecture and research in
 [ODA_INTEGRATION_PLAN.md](./ODA_INTEGRATION_PLAN.md).
+
+The main product roadmap now delivers persistent local Home Stock and basic stock-aware shopping
+before Oda. Releases 5 and 6 in this document therefore describe Oda enrichment and advanced stock
+allocation; they must not be used to defer the personal-use stock and household-needs workflow.
 
 ## Outcome
 
@@ -14,7 +18,7 @@ The next MVP is complete when a household can:
 3. turn an approved weekly shopping list into matched Oda products;
 4. review product variants, package counts, shortages and overbuying;
 5. merge approved products into the existing Oda cart;
-6. select a completed Oda order and import its delivered products into **Home Stock**;
+6. select a completed Oda order and propose its delivered products as additions to existing **Home Stock**;
 7. review everything held in cupboard, fridge and freezer; and
 8. see confirmed home stock deducted transparently from the next shopping list.
 
@@ -41,7 +45,9 @@ repository remain in place.
 
 ## MVP product rules
 
-- “Pantry” is named **Home Stock** in the UI and includes cupboard, fridge and freezer.
+- “Pantry” is named **Home Stock** in the UI and includes food and household items across cupboard,
+  fridge, freezer, bathroom, cleaning storage and other locations.
+- A persistent Home Stock item remains in the catalogue when its quantity reaches zero.
 - Recipes imported from text or JSON always pass through ingredient and quantity review before they
   can contribute to a real Oda cart.
 - Oda order import is user-triggered. Do not poll or import orders silently.
@@ -84,13 +90,16 @@ reversible deductions.
 
 ### Data layer
 
-**Plain English:** Core meal-planner data remains where it is. Oda and Home Stock data get their own
-local store so a large order history or a broken MCP cannot corrupt meal plans.
+**Plain English:** Core meal-planner and Home Stock data remain together so stock works offline and
+is included in normal backup and restore. Oda mappings, drafts and order records get their own local
+store so a large order history or broken MCP cannot corrupt the personal household data.
 
-**Technical specification:** Create `IntegrationRepository` backed by IndexedDB with stores for
-`productMappings`, `cartDrafts`, `importedOrders`, `homeStockItems`, `stockMovements` and
-`integrationPreferences`. Do not store credentials, cookies, delivery addresses, payment data or
-product images. Importing the same Oda order twice must be a no-op.
+**Technical specification:** Keep `homeStockItems` in versioned core `AppState` behind
+`MealPlannerRepository`. Create `IntegrationRepository` backed by IndexedDB with stores for
+`productMappings`, `cartDrafts`, `importedOrders` and `integrationPreferences`. Oda imports remain
+proposals until an explicit core command confirms additions. Do not store credentials, cookies,
+delivery addresses, payment data or product images. Importing the same Oda order twice must be a
+no-op.
 
 ### Authentication and identity
 
@@ -294,23 +303,23 @@ Subtasks:
 Test gate: importing the same fixture twice produces one local order. Live testing reads one order
 but does not save it until the user confirms the preview.
 
-### Release 5 — Home Stock MVP
+### Release 5 — Oda-enriched Home Stock
 
 **User value:** imported groceries become a manageable view of everything at home.
 
 Subtasks:
 
-1. Add `HomeStockItem` and reversible `StockMovement` domain logic.
-2. Confirm order import as stock additions.
+1. Extend the existing local `HomeStockItem` domain with reversible Oda-sourced movement metadata.
+2. Confirm reviewed order proposals as stock additions.
 3. Build All, Cupboard, Fridge and Freezer views.
 4. Add `Used up`, `Adjust quantity`, `Move location` and `Still have this` actions.
 5. Mark amounts `exact` or `estimated` and show the last confirmed date.
-6. Add manual stock entry for non-Oda purchases.
+6. Preserve manual food and household items that have no Oda product mapping.
 
 Test gate: order additions, manual adjustments and reversals reproduce the expected balance after
 reload. This release does not alter shopping calculations yet.
 
-### Release 6 — stock-aware shopping
+### Release 6 — advanced stock-aware shopping for Oda
 
 **User value:** the next shopping list accounts for confirmed food already at home.
 
@@ -320,7 +329,7 @@ Subtasks:
 2. Convert compatible units and leave incompatible variants untouched.
 3. Show `Recipe need − Home Stock = Buy` on each affected line.
 4. Require confirmation before using estimated stock.
-5. Create reversible reservation/consumption movements when a meal is marked cooked.
+5. Offer a confirmed reversible consumption movement when a meal is marked cooked; never deduct automatically.
 6. Never replace the original recipe requirement or hide a deduction explanation.
 
 Test gate: cover multiple recipes sharing one ingredient, partial stock, variant mismatch, estimated

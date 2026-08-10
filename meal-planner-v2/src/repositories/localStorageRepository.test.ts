@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RepositoryError } from '../domain/errors';
 import { createInitialState } from '../domain/seed';
+import type { AppState } from '../domain/types';
 import {
   LocalStorageMealPlannerRepository,
   STORAGE_KEY,
@@ -48,14 +49,212 @@ describe('LocalStorageMealPlannerRepository', () => {
     ).toThrow('unsupported data version');
   });
 
+  it('rejects malformed nested records instead of accepting an invalid persisted state', () => {
+    const repository = new LocalStorageMealPlannerRepository(new MemoryStorage());
+    const invalidRecipe = {
+      ...createInitialState(),
+      recipes: [{ ...createInitialState().recipes[0], ingredients: [{ id: 'bad' }] }],
+    };
+
+    expect(() => repository.importData(JSON.stringify(invalidRecipe))).toThrow('invalid an ingredient');
+  });
+
   it('exports a readable round-trip backup', () => {
     const repository = new LocalStorageMealPlannerRepository(new MemoryStorage());
-    const state = createInitialState();
+    const initial = createInitialState();
+    const weekStart = Object.keys(initial.plans)[0];
+    const state: AppState = {
+      ...initial,
+      shoppingLists: {
+        [weekStart]: [
+          {
+            id: 'shop-oats-g',
+            name: 'Oats',
+            grossRecipeNeed: 500,
+            confirmedStockApplied: 100,
+            remainingBuyQuantity: 400,
+            unit: 'g',
+            category: 'pantry',
+            sources: ['recipe', 'manual'],
+            sourceRecipeIds: ['recipe-porridge'],
+            requiresReview: false,
+            checked: true,
+          },
+        ],
+      },
+      homeStockItems: [
+        {
+          id: 'stock-oats',
+          name: 'Oats',
+          kind: 'food' as const,
+          category: 'pantry',
+          location: 'cupboard',
+          frozen: false,
+          quantity: 1.5,
+          unit: 'kg',
+          planningPriority: 'use-soon' as const,
+          reorderPoint: 0.5,
+          targetQuantity: 2,
+          archived: false,
+          updatedAt: '2026-08-10T08:00:00.000Z',
+        },
+      ],
+    };
 
     const restored = repository.importData(repository.exportData(state));
 
     expect(restored.recipes).toHaveLength(state.recipes.length);
     expect(restored.preferences).toEqual(state.preferences);
+    expect(restored.homeStockItems).toEqual(state.homeStockItems);
+    expect(restored.shoppingLists).toEqual(state.shoppingLists);
+  });
+
+  it('round-trips replenishment decisions and accepted top-up reasons', () => {
+    const repository = new LocalStorageMealPlannerRepository(new MemoryStorage());
+    const initial = createInitialState();
+    const weekStart = Object.keys(initial.plans)[0];
+    const state: AppState = {
+      ...initial,
+      homeStockItems: [
+        {
+          id: 'stock-bananas',
+          name: 'Bananas',
+          kind: 'food',
+          category: 'produce',
+          location: 'Fruit bowl',
+          frozen: false,
+          quantity: 0,
+          unit: '',
+          planningPriority: 'normal',
+          reorderPoint: 2,
+          targetQuantity: 6,
+          replenishmentRuleEnabled: true,
+          replenishmentSuggestionStatus: 'dismissed',
+          archived: false,
+          updatedAt: '2026-08-10T08:00:00.000Z',
+        },
+        {
+          id: 'stock-oats-disabled',
+          name: 'Oats',
+          kind: 'food',
+          category: 'pantry',
+          location: 'Cupboard',
+          frozen: false,
+          quantity: 0,
+          unit: 'g',
+          planningPriority: 'normal',
+          reorderPoint: 100,
+          targetQuantity: 500,
+          replenishmentRuleEnabled: false,
+          archived: false,
+          updatedAt: '2026-08-10T08:00:00.000Z',
+        },
+      ],
+      shoppingLists: {
+        [weekStart]: [
+          {
+            id: 'shop-bananas',
+            name: 'Bananas',
+            grossRecipeNeed: 4,
+            confirmedStockApplied: 0,
+            remainingBuyQuantity: 6,
+            unit: '',
+            category: 'produce',
+            sources: ['recipe', 'stock-top-up'],
+            sourceRecipeIds: ['recipe-smoothie'],
+            sourceHomeStockItemIds: ['stock-bananas'],
+            stockTopUpQuantity: 6,
+            requiresReview: false,
+            checked: false,
+          },
+        ],
+      },
+    };
+
+    const restored = repository.importData(repository.exportData(state));
+
+    expect(restored.homeStockItems).toEqual(state.homeStockItems);
+    expect(restored.shoppingLists).toEqual(state.shoppingLists);
+  });
+
+  it('persists a Home Stock item when its quantity is zero', () => {
+    const repository = new LocalStorageMealPlannerRepository(new MemoryStorage());
+    const state = {
+      ...createInitialState(),
+      homeStockItems: [
+        {
+          id: 'stock-dishwasher-tablets',
+          name: 'Dishwasher tablets',
+          kind: 'household' as const,
+          category: 'cleaning',
+          location: 'utility cupboard',
+          frozen: false,
+          quantity: 0,
+          unit: 'tablets',
+          planningPriority: 'normal' as const,
+          archived: false,
+          updatedAt: '2026-08-10T08:00:00.000Z',
+        },
+      ],
+    };
+
+    repository.save(state);
+
+    expect(repository.load().homeStockItems).toEqual(state.homeStockItems);
+  });
+
+  it('restores Home Stock and manual shopping after an offline reload', () => {
+    const storage = new MemoryStorage();
+    const firstSession = new LocalStorageMealPlannerRepository(storage);
+    const initial = createInitialState();
+    const weekStart = Object.keys(initial.plans)[0];
+    firstSession.save({
+      ...initial,
+      homeStockItems: [
+        {
+          id: 'stock-toilet-paper',
+          name: 'Toilet paper',
+          kind: 'household',
+          category: 'Household',
+          location: 'Bathroom cupboard',
+          frozen: false,
+          quantity: 0,
+          unit: 'rolls',
+          planningPriority: 'use-soon',
+          archived: false,
+          updatedAt: '2026-08-10T08:00:00.000Z',
+        },
+      ],
+      shoppingLists: {
+        [weekStart]: [
+          {
+            id: 'shop-toilet-paper',
+            name: 'Toilet paper',
+            grossRecipeNeed: null,
+            confirmedStockApplied: 0,
+            remainingBuyQuantity: 1,
+            unit: 'rolls',
+            category: 'other',
+            sources: ['manual'],
+            sourceRecipeIds: [],
+            requiresReview: false,
+            checked: false,
+          },
+        ],
+      },
+    });
+
+    const reloaded = new LocalStorageMealPlannerRepository(storage).load();
+
+    expect(reloaded.homeStockItems[0]).toMatchObject({
+      name: 'Toilet paper',
+      quantity: 0,
+      planningPriority: 'use-soon',
+    });
+    expect(reloaded.shoppingLists[weekStart][0]).toMatchObject({
+      name: 'Toilet paper',
+      sources: ['manual'],
+    });
   });
 
   it('migrates version one recipes and preferences to the current effort model', () => {
@@ -79,10 +278,87 @@ describe('LocalStorageMealPlannerRepository', () => {
 
     const restored = repository.importData(JSON.stringify(legacy));
 
-    expect(restored.schemaVersion).toBe(4);
+    expect(restored.schemaVersion).toBe(7);
     expect(restored.recipes[0].cookAttention).toBe('mostly-hands-off');
     expect(restored.recipes[0].makeAhead).toBe('prep-ahead');
     expect(restored.preferences.weatherLocation).toBeNull();
+  });
+
+  it('migrates version four data without losing household data or shopping ticks', () => {
+    const repository = new LocalStorageMealPlannerRepository(new MemoryStorage());
+    const current = createInitialState();
+    const weekStart = Object.keys(current.plans)[0];
+    const legacy = {
+      schemaVersion: 4,
+      recipes: current.recipes,
+      plans: current.plans,
+      shoppingLists: {
+        [weekStart]: [
+          {
+            id: 'shop-oats-g',
+            name: 'Oats',
+            quantity: 500,
+            unit: 'g',
+            category: 'pantry',
+            sourceRecipeIds: ['seed-porridge'],
+            checked: true,
+          },
+        ],
+      },
+      preferences: { ...current.preferences, householdName: 'Migration household' },
+    };
+
+    const restored = repository.importData(JSON.stringify(legacy));
+
+    expect(restored.schemaVersion).toBe(7);
+    expect(restored.recipes).toEqual(current.recipes);
+    expect(restored.plans).toEqual(current.plans);
+    expect(restored.preferences).toEqual(legacy.preferences);
+    expect(restored.homeStockItems).toEqual([]);
+    expect(restored.shoppingLists[weekStart]).toEqual([
+      {
+        id: 'shop-oats-g',
+        name: 'Oats',
+        grossRecipeNeed: 500,
+        confirmedStockApplied: 0,
+        remainingBuyQuantity: 500,
+        unit: 'g',
+        category: 'pantry',
+        sources: ['recipe'],
+        sourceRecipeIds: ['seed-porridge'],
+        requiresReview: false,
+        checked: true,
+      },
+    ]);
+  });
+
+  it('migrates version five frozen categories to the explicit Home Stock flag', () => {
+    const repository = new LocalStorageMealPlannerRepository(new MemoryStorage());
+    const current = createInitialState();
+    const legacyItem = {
+      id: 'stock-frozen-peas',
+      name: 'Peas',
+      kind: 'food',
+      category: 'frozen',
+      location: 'Freezer',
+      quantity: 500,
+      unit: 'g',
+      planningPriority: 'normal',
+      archived: false,
+      updatedAt: '2026-08-10T08:00:00.000Z',
+    };
+    const legacy = { ...current, schemaVersion: 5, homeStockItems: [legacyItem] };
+
+    const restored = repository.importData(JSON.stringify(legacy));
+
+    expect(restored.schemaVersion).toBe(7);
+    expect(restored.homeStockItems).toEqual([
+      expect.objectContaining({
+        id: 'stock-frozen-peas',
+        category: 'frozen',
+        frozen: true,
+      }),
+    ]);
   });
 
   it('adds the requested catalogue expansion once when migrating an existing household', () => {

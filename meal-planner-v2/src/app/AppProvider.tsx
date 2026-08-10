@@ -12,15 +12,23 @@ import { startOfWeek, toISODateLocal } from '../domain/date';
 import { RepositoryError } from '../domain/errors';
 import { generateMealPlan, replaceMeal, setMealServings } from '../domain/planner';
 import { createEmptyPlan, createInitialState } from '../domain/seed';
-import { buildShoppingList } from '../domain/shopping';
+import {
+  acceptReplenishmentSuggestion as addAcceptedReplenishmentToList,
+  buildReplenishmentSuggestions,
+  buildShoppingList,
+} from '../domain/shopping';
+import { generateStockOnlyMealPlan, type StockOnlyPlanResult } from '../domain/stockPlanning';
 import type {
   AppState,
   DayKey,
+  HomeStockItem,
   MealPlan,
   MealSlotKind,
   Preferences,
   Recipe,
+  ReplenishmentSuggestion,
   ShoppingItem,
+  ShoppingItemSource,
 } from '../domain/types';
 import { DAY_KEYS } from '../domain/types';
 import { LocalStorageMealPlannerRepository } from '../repositories/localStorageRepository';
@@ -37,6 +45,7 @@ interface AppContextValue {
   activeWeek: string;
   currentPlan: MealPlan;
   shoppingItems: ShoppingItem[];
+  replenishmentSuggestions: ReplenishmentSuggestion[];
   storageError: string | null;
   toasts: ToastMessage[];
   goToWeek: (weekStart: string) => void;
@@ -44,6 +53,7 @@ interface AppContextValue {
   updateMealServings: (day: DayKey, servings: number) => void;
   toggleLock: (day: DayKey) => void;
   generateWeek: () => void;
+  planFromStock: (constrainedStockItemIds?: string[]) => StockOnlyPlanResult;
   swapMeal: (day: DayKey) => void;
   markCooked: (day: DayKey) => void;
   markPlanReady: () => void;
@@ -52,6 +62,20 @@ interface AppContextValue {
   deleteRecipe: (recipeId: string) => void;
   rebuildShopping: () => void;
   toggleShoppingItem: (itemId: string) => void;
+  upsertHomeStockItem: (item: HomeStockItem) => void;
+  adjustHomeStockQuantity: (itemId: string, adjustment: number) => void;
+  markHomeStockUsedUp: (itemId: string) => void;
+  toggleHomeStockUseSoon: (itemId: string) => void;
+  archiveHomeStockItem: (itemId: string) => void;
+  restoreHomeStockItem: (itemId: string) => void;
+  addHomeStockItemToShopping: (itemId: string) => void;
+  acceptReplenishmentSuggestion: (itemId: string) => void;
+  dismissReplenishmentSuggestion: (itemId: string) => void;
+  disableReplenishmentRule: (itemId: string) => void;
+  addManualShoppingItem: (
+    item: Pick<ShoppingItem, 'name' | 'remainingBuyQuantity' | 'unit' | 'category'>,
+  ) => void;
+  resolveShoppingReview: (itemId: string) => void;
   updatePreferences: (patch: Partial<Preferences>) => void;
   exportData: () => string;
   importData: (serialized: string) => void;
@@ -82,6 +106,29 @@ function boot(repository: MealPlannerRepository): { state: AppState; error: stri
 
 function makeToastId() {
   return `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function makeItemId(prefix: string) {
+  return `${prefix}-${crypto.randomUUID()}`;
+}
+
+function resetReplenishmentCycle(
+  previous: HomeStockItem | undefined,
+  next: HomeStockItem,
+): HomeStockItem {
+  const ruleChanged = Boolean(
+    previous &&
+    (previous.reorderPoint !== next.reorderPoint ||
+      previous.targetQuantity !== next.targetQuantity ||
+      previous.replenishmentRuleEnabled !== next.replenishmentRuleEnabled),
+  );
+  const replenished =
+    next.quantity !== null &&
+    next.reorderPoint !== undefined &&
+    next.reorderPoint !== null &&
+    next.quantity > next.reorderPoint;
+  if (!ruleChanged && !replenished) return next;
+  return { ...next, replenishmentSuggestionStatus: undefined };
 }
 
 export function AppProvider({
@@ -147,6 +194,10 @@ export function AppProvider({
   const shoppingItems = useMemo(
     () => state.shoppingLists[activeWeek] ?? [],
     [activeWeek, state.shoppingLists],
+  );
+  const replenishmentSuggestions = useMemo(
+    () => buildReplenishmentSuggestions(state.homeStockItems),
+    [state.homeStockItems],
   );
 
   const goToWeek = useCallback(
@@ -235,6 +286,38 @@ export function AppProvider({
     notify('Your week has been planned.', 'success');
   }, [notify, state.recipes.length, updateActivePlan]);
 
+  const planFromStock = useCallback(
+    (constrainedStockItemIds: string[] = []) => {
+      const result = generateStockOnlyMealPlan(
+        currentPlan,
+        state.recipes,
+        state.homeStockItems,
+        constrainedStockItemIds,
+        new Date().toISOString(),
+      );
+      if (!result.ok) {
+        notify(result.failures.map((failure) => failure.message).join(' '), 'error');
+        return result;
+      }
+
+      setState((current) => {
+        const nextShopping = { ...current.shoppingLists };
+        delete nextShopping[activeWeek];
+        return {
+          ...current,
+          plans: { ...current.plans, [activeWeek]: result.plan },
+          shoppingLists: nextShopping,
+        };
+      });
+      notify(
+        `Planned ${result.suggestions.length} stock-only dinner${result.suggestions.length === 1 ? '' : 's'}. Home Stock was not adjusted.`,
+        'success',
+      );
+      return result;
+    },
+    [activeWeek, currentPlan, notify, state.homeStockItems, state.recipes],
+  );
+
   const swapMeal = useCallback(
     (day: DayKey) => {
       updateActivePlan((plan, current) => replaceMeal(plan, day, current.recipes));
@@ -279,6 +362,7 @@ export function AppProvider({
             nextPlan,
             current.recipes,
             current.shoppingLists[activeWeek],
+            current.homeStockItems,
           ),
         },
       };
@@ -353,7 +437,12 @@ export function AppProvider({
         ...current,
         shoppingLists: {
           ...current.shoppingLists,
-          [activeWeek]: buildShoppingList(plan, current.recipes, current.shoppingLists[activeWeek]),
+          [activeWeek]: buildShoppingList(
+            plan,
+            current.recipes,
+            current.shoppingLists[activeWeek],
+            current.homeStockItems,
+          ),
         },
       };
     });
@@ -373,6 +462,250 @@ export function AppProvider({
       }));
     },
     [activeWeek],
+  );
+
+  const upsertHomeStockItem = useCallback(
+    (item: HomeStockItem) => {
+      setState((current) => {
+        const previous = current.homeStockItems.find((candidate) => candidate.id === item.id);
+        const nextItem = resetReplenishmentCycle(previous, item);
+        return {
+          ...current,
+          homeStockItems: previous
+            ? current.homeStockItems.map((candidate) =>
+                candidate.id === item.id ? nextItem : candidate,
+              )
+            : [nextItem, ...current.homeStockItems],
+        };
+      });
+      notify('Home Stock saved.', 'success');
+    },
+    [notify],
+  );
+
+  const updateHomeStock = useCallback(
+    (itemId: string, updater: (item: HomeStockItem) => HomeStockItem, message: string) => {
+      setState((current) => ({
+        ...current,
+        homeStockItems: current.homeStockItems.map((item) =>
+          item.id === itemId ? resetReplenishmentCycle(item, updater(item)) : item,
+        ),
+      }));
+      notify(message, 'success');
+    },
+    [notify],
+  );
+
+  const adjustHomeStockQuantity = useCallback(
+    (itemId: string, adjustment: number) => {
+      updateHomeStock(
+        itemId,
+        (item) => ({
+          ...item,
+          quantity: Math.max(0, (item.quantity ?? 0) + adjustment),
+          updatedAt: new Date().toISOString(),
+        }),
+        'Home Stock quantity updated.',
+      );
+    },
+    [updateHomeStock],
+  );
+
+  const markHomeStockUsedUp = useCallback(
+    (itemId: string) => {
+      updateHomeStock(
+        itemId,
+        (item) => ({ ...item, quantity: 0, updatedAt: new Date().toISOString() }),
+        'Marked as used up. It remains in Home Stock.',
+      );
+    },
+    [updateHomeStock],
+  );
+
+  const toggleHomeStockUseSoon = useCallback(
+    (itemId: string) => {
+      updateHomeStock(
+        itemId,
+        (item) => ({
+          ...item,
+          planningPriority: item.planningPriority === 'use-soon' ? 'normal' : 'use-soon',
+          updatedAt: new Date().toISOString(),
+        }),
+        'Home Stock priority updated.',
+      );
+    },
+    [updateHomeStock],
+  );
+
+  const archiveHomeStockItem = useCallback(
+    (itemId: string) => {
+      updateHomeStock(
+        itemId,
+        (item) => ({ ...item, archived: true, updatedAt: new Date().toISOString() }),
+        'Home Stock item archived.',
+      );
+    },
+    [updateHomeStock],
+  );
+
+  const restoreHomeStockItem = useCallback(
+    (itemId: string) => {
+      updateHomeStock(
+        itemId,
+        (item) => ({ ...item, archived: false, updatedAt: new Date().toISOString() }),
+        'Home Stock item restored.',
+      );
+    },
+    [updateHomeStock],
+  );
+
+  const addHomeStockItemToShopping = useCallback(
+    (itemId: string) => {
+      setState((current) => {
+        const stockItem = current.homeStockItems.find((item) => item.id === itemId);
+        if (!stockItem) return current;
+        const derivedSuggestion = buildReplenishmentSuggestions([stockItem])[0];
+        const quantity = stockItem.targetQuantity ?? 1;
+        const suggestion: ReplenishmentSuggestion = derivedSuggestion ?? {
+          id: `manual-top-up-${stockItem.id}`,
+          homeStockItemId: stockItem.id,
+          name: stockItem.name,
+          currentQuantity: stockItem.quantity,
+          reorderPoint: stockItem.reorderPoint ?? 0,
+          targetQuantity: quantity,
+          suggestedQuantity: quantity,
+          unit: stockItem.unit,
+          category: 'other',
+          requiresReview: stockItem.quantity === null,
+          reviewReason: stockItem.quantity === null ? 'unknown-quantity' : null,
+        };
+        return {
+          ...current,
+          homeStockItems: derivedSuggestion
+            ? current.homeStockItems.map((item) =>
+                item.id === itemId
+                  ? { ...item, replenishmentSuggestionStatus: 'accepted' as const }
+                  : item,
+              )
+            : current.homeStockItems,
+          shoppingLists: {
+            ...current.shoppingLists,
+            [activeWeek]: addAcceptedReplenishmentToList(
+              current.shoppingLists[activeWeek] ?? [],
+              suggestion,
+            ),
+          },
+        };
+      });
+      notify('Added to this week’s shopping list.', 'success');
+    },
+    [activeWeek, notify],
+  );
+
+  const acceptReplenishmentSuggestion = useCallback(
+    (itemId: string) => {
+      setState((current) => {
+        const stockItem = current.homeStockItems.find((item) => item.id === itemId);
+        if (!stockItem) return current;
+        const suggestion = buildReplenishmentSuggestions([stockItem])[0];
+        if (!suggestion) return current;
+        return {
+          ...current,
+          homeStockItems: current.homeStockItems.map((item) =>
+            item.id === itemId
+              ? { ...item, replenishmentSuggestionStatus: 'accepted' as const }
+              : item,
+          ),
+          shoppingLists: {
+            ...current.shoppingLists,
+            [activeWeek]: addAcceptedReplenishmentToList(
+              current.shoppingLists[activeWeek] ?? [],
+              suggestion,
+            ),
+          },
+        };
+      });
+      notify('Top-up accepted and added to this week’s shopping list.', 'success');
+    },
+    [activeWeek, notify],
+  );
+
+  const dismissReplenishmentSuggestion = useCallback(
+    (itemId: string) => {
+      updateHomeStock(
+        itemId,
+        (item) => ({
+          ...item,
+          replenishmentSuggestionStatus: 'dismissed',
+          updatedAt: new Date().toISOString(),
+        }),
+        'Top-up suggestion dismissed.',
+      );
+    },
+    [updateHomeStock],
+  );
+
+  const disableReplenishmentRule = useCallback(
+    (itemId: string) => {
+      updateHomeStock(
+        itemId,
+        (item) => ({
+          ...item,
+          replenishmentRuleEnabled: false,
+          updatedAt: new Date().toISOString(),
+        }),
+        'Replenishment rule disabled.',
+      );
+    },
+    [updateHomeStock],
+  );
+
+  const addManualShoppingItem = useCallback(
+    (item: Pick<ShoppingItem, 'name' | 'remainingBuyQuantity' | 'unit' | 'category'>) => {
+      const source: ShoppingItemSource = 'manual';
+      setState((current) => ({
+        ...current,
+        shoppingLists: {
+          ...current.shoppingLists,
+          [activeWeek]: [
+            ...(current.shoppingLists[activeWeek] ?? []),
+            {
+              id: makeItemId('shop-manual'),
+              name: item.name.trim(),
+              grossRecipeNeed: null,
+              confirmedStockApplied: 0,
+              remainingBuyQuantity: item.remainingBuyQuantity,
+              unit: item.unit.trim(),
+              category: item.category,
+              sources: [source],
+              sourceRecipeIds: [],
+              requiresReview: false,
+              checked: false,
+            },
+          ],
+        },
+      }));
+      notify('Added to this week’s shopping list.', 'success');
+    },
+    [activeWeek, notify],
+  );
+
+  const resolveShoppingReview = useCallback(
+    (itemId: string) => {
+      setState((current) => ({
+        ...current,
+        shoppingLists: {
+          ...current.shoppingLists,
+          [activeWeek]: (current.shoppingLists[activeWeek] ?? []).map((item) =>
+            item.id === itemId
+              ? { ...item, requiresReview: false, confirmedStockApplied: 0 }
+              : item,
+          ),
+        },
+      }));
+      notify('Reviewed. The full recipe amount remains to buy.', 'success');
+    },
+    [activeWeek, notify],
   );
 
   const updatePreferences = useCallback((patch: Partial<Preferences>) => {
@@ -420,6 +753,7 @@ export function AppProvider({
       activeWeek,
       currentPlan,
       shoppingItems,
+      replenishmentSuggestions,
       storageError,
       toasts,
       goToWeek,
@@ -427,6 +761,7 @@ export function AppProvider({
       updateMealServings,
       toggleLock,
       generateWeek,
+      planFromStock,
       swapMeal,
       markCooked,
       markPlanReady,
@@ -435,6 +770,18 @@ export function AppProvider({
       deleteRecipe,
       rebuildShopping,
       toggleShoppingItem,
+      upsertHomeStockItem,
+      adjustHomeStockQuantity,
+      markHomeStockUsedUp,
+      toggleHomeStockUseSoon,
+      archiveHomeStockItem,
+      restoreHomeStockItem,
+      addHomeStockItemToShopping,
+      acceptReplenishmentSuggestion,
+      dismissReplenishmentSuggestion,
+      disableReplenishmentRule,
+      addManualShoppingItem,
+      resolveShoppingReview,
       updatePreferences,
       exportData,
       importData,
@@ -444,19 +791,31 @@ export function AppProvider({
     }),
     [
       activeWeek,
+      acceptReplenishmentSuggestion,
+      addHomeStockItemToShopping,
+      addManualShoppingItem,
+      adjustHomeStockQuantity,
+      archiveHomeStockItem,
       currentPlan,
       deleteRecipe,
+      disableReplenishmentRule,
+      dismissReplenishmentSuggestion,
       dismissToast,
       exportData,
       generateWeek,
       goToWeek,
       importData,
       markCooked,
+      markHomeStockUsedUp,
       markPlanReady,
       notify,
+      planFromStock,
       rebuildShopping,
+      replenishmentSuggestions,
       reopenPlan,
       resetData,
+      resolveShoppingReview,
+      restoreHomeStockItem,
       setMeal,
       updateMealServings,
       shoppingItems,
@@ -465,9 +824,11 @@ export function AppProvider({
       swapMeal,
       toasts,
       toggleLock,
+      toggleHomeStockUseSoon,
       toggleShoppingItem,
       updatePreferences,
       upsertRecipe,
+      upsertHomeStockItem,
     ],
   );
 

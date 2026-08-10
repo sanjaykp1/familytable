@@ -32,6 +32,7 @@ export default function App() {
     <AppShell activeScreen={screen} onNavigate={navigate}>
       {screen === 'plan' ? (
         <PlanPage
+          onOpenRecipes={() => navigate('recipes')}
           onOpenShopping={() => navigate('shopping')}
           onOpenSettings={() => navigate('settings')}
         />

@@ -1,6 +1,6 @@
 # Oda integration architecture and delivery plan
 
-Updated: 7 August 2026
+Updated: 9 August 2026
 
 ## Decision summary
 
@@ -9,10 +9,11 @@ The first useful release should turn a confirmed Family Table shopping list into
 Oda products and then add only the approved lines to the user's Oda cart. Checkout, payment and
 delivery-slot selection remain in Oda.
 
-Do not start with pantry tracking. First complete recipe onboarding and ingredient review, run a
-short MCP compatibility spike, then ship read-only Oda product/order data before enabling cart
-writes. Order history may later suggest preferred products and pantry additions, but a purchase is
-not proof that an item is still in the home.
+Core local Home Stock is now a Phase 1 product priority and must be built independently of Oda. Within
+the Oda integration sequence, first complete recipe onboarding and ingredient review, run a short
+MCP compatibility spike, then ship read-only Oda product/order data before enabling cart writes or
+order-driven stock imports. Order history may later suggest preferred products and Home Stock
+additions, but a purchase is not proof that an item is still in the home.
 
 ## What the current Oda integrations appear to support
 
@@ -55,7 +56,8 @@ not proof that an item is still in the home.
 | Ingredient and quantity review | No | **Yes** | No | Hard gate; ordering cannot guess silently |
 | Duplicate detection | No | Strongly recommended | No | Deterministic name + ingredient fingerprint first |
 | Tag suggestions | No | No | No | Bundle with onboarding, but keep rules editable |
-| Pantry/freezer tracking | No | No for reviewed cart v1 | No | Build after the cart pilot |
+| Local Home Stock and reconciliation | No | No | No | Build earlier in product Phase 1 without Oda |
+| Oda-driven stock additions | No | No | Yes | Add only after reviewed order import is available |
 
 The shortest responsible sequence is therefore:
 
@@ -64,7 +66,7 @@ The shortest responsible sequence is therefore:
 3. Add read-only product search, connection health and (if available) order history.
 4. Add product matching and a mandatory cart review.
 5. Enable confirmed, idempotent cart writes.
-6. Add pantry/freezer tracking and use it to reduce future shopping quantities.
+6. Enrich existing Home Stock with reviewed order additions and confirmed product mappings.
 
 ## A. Tech stack recommendation
 
@@ -94,7 +96,7 @@ never silently change the pantry.
 - `ProductMapping` links a normalized ingredient key to a confirmed Oda product ID.
 - `CartDraft` contains immutable preview lines, source shopping-list revision and status.
 - `ExternalOrder` contains an Oda order ID, dates, totals and minimal normalized line items.
-- `PantryItem` is added later and records user-confirmed on-hand quantity separately from purchases.
+- `HomeStockItem` belongs to the core planner and records user-confirmed on-hand quantity separately from Oda purchases.
 
 ### Data layer
 
