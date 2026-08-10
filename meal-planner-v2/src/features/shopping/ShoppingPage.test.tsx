@@ -286,7 +286,7 @@ describe('ShoppingPage Home Stock', () => {
   });
 
   it('keeps an uncertain match explainable and lets the household review it', async () => {
-    const page = await renderShopping(stateWith([stockItem({ quantity: 1, unit: 'kg' })]));
+    const page = await renderShopping(stateWith([stockItem({ quantity: 1, unit: 'bag' })]));
 
     expect(page.container.textContent).toContain('stock needs review');
     await click(page.container, 'Review: buy full amount');

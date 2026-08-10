@@ -1,5 +1,11 @@
 import type { DayKey, HomeStockItem, MealPlan, Recipe } from './types';
 import { DAY_KEYS } from './types';
+import {
+  createStockLedger,
+  matchIngredientToStock,
+  type IngredientMatchResult,
+  type StockLedger,
+} from './ingredientMatching';
 
 export type StockEligibilityFailureCode =
   | 'missing-stock'
@@ -17,6 +23,8 @@ export interface StockIngredientAllocation {
   stockItemId: string;
   stockItemName: string;
   allocatedQuantity: number;
+  baseQuantity: number;
+  matchKind: 'exact' | 'alias';
   useSoon: boolean;
 }
 
@@ -36,8 +44,15 @@ export interface StockOnlyRecipeEvaluation {
   eligible: boolean;
   allocations: StockIngredientAllocation[];
   failures: StockEligibilityFailure[];
+  ingredientMatches: IngredientMatchResult[];
+  remainingStockLedger: StockLedger;
   useSoonItemIds: string[];
   reason: string;
+}
+
+export interface LockedStockReservationFailure extends StockEligibilityFailure {
+  day: DayKey;
+  recipeId: string;
 }
 
 export interface StockPlanConstraintFailure {
@@ -52,145 +67,113 @@ export type StockOnlyPlanResult =
       plan: MealPlan;
       suggestions: StockOnlyRecipeEvaluation[];
       constrainedStockItemIds: string[];
+      lockedReservationFailures: LockedStockReservationFailure[];
     }
   | {
       ok: false;
       plan: MealPlan;
       failures: StockPlanConstraintFailure[];
       constrainedStockItemIds: string[];
+      lockedReservationFailures: LockedStockReservationFailure[];
     };
-
-function normalized(value: string): string {
-  return value.trim().toLocaleLowerCase().replace(/\s+/g, ' ');
-}
 
 function quantityLabel(quantity: number | null, unit: string): string {
   if (quantity === null) return 'an unknown quantity';
   return `${quantity}${unit ? ` ${unit}` : ''}`;
 }
 
-function activeFoodStock(homeStockItems: HomeStockItem[]): HomeStockItem[] {
-  return homeStockItems.filter((item) => item.kind === 'food' && !item.archived);
+function failureForMatch(
+  ingredient: Recipe['ingredients'][number],
+  match: IngredientMatchResult,
+): StockEligibilityFailure | null {
+  const common = {
+    ingredientId: ingredient.id,
+    ingredientName: ingredient.name,
+    requiredQuantity: ingredient.quantity,
+    unit: ingredient.unit,
+    matchedStockItemIds: match.matchedStockItemIds,
+  };
+
+  switch (match.reasonCode) {
+    case 'no-name-match':
+      return {
+        ...common,
+        code: 'missing-stock',
+        availableQuantity: 0,
+        message: `${ingredient.name} is not in confirmed Home Stock.`,
+      };
+    case 'unknown-required-quantity':
+      return {
+        ...common,
+        code: 'unknown-required-quantity',
+        availableQuantity: null,
+        message: `${ingredient.name} has no confirmed recipe quantity.`,
+      };
+    case 'unknown-stock-quantity':
+      return {
+        ...common,
+        code: 'unknown-stock-quantity',
+        availableQuantity: null,
+        message: `${ingredient.name} has no confirmed Home Stock quantity.`,
+      };
+    case 'incompatible-unit':
+      return {
+        ...common,
+        code: 'incompatible-unit',
+        availableQuantity: null,
+        message: `${ingredient.name} has matching Home Stock recorded in an incompatible unit.`,
+      };
+    case 'ambiguous-alias':
+      return {
+        ...common,
+        code: 'ambiguous-match',
+        availableQuantity: null,
+        message: `${ingredient.name} has an ambiguous Home Stock alias that needs review.`,
+      };
+    case 'insufficient-stock':
+      return {
+        ...common,
+        code: 'insufficient-stock',
+        availableQuantity: match.totalConfirmedQuantity,
+        message: `${ingredient.name} needs ${quantityLabel(ingredient.quantity, ingredient.unit)}, but only ${quantityLabel(match.totalConfirmedQuantity, ingredient.unit)} is available.`,
+      };
+    case null:
+      return null;
+  }
 }
 
-/**
- * Strictly checks one saved recipe against confirmed stock. Matching is deliberately
- * conservative: names and units must match after whitespace/case normalisation, and
- * more than one same-name stock record needs human review before it can qualify.
- */
+/** Strictly checks one saved recipe against confirmed stock through the shared matcher. */
 export function evaluateStockOnlyRecipe(
   recipe: Recipe,
   homeStockItems: HomeStockItem[],
+  initialLedger: StockLedger = createStockLedger(homeStockItems),
 ): StockOnlyRecipeEvaluation {
-  const stock = activeFoodStock(homeStockItems);
-  const remaining = new Map(stock.map((item) => [item.id, item.quantity]));
+  const stockById = new Map(homeStockItems.map((item) => [item.id, item]));
+  let remainingLedger = initialLedger;
   const allocations: StockIngredientAllocation[] = [];
   const failures: StockEligibilityFailure[] = [];
+  const ingredientMatches: IngredientMatchResult[] = [];
 
   for (const ingredient of recipe.ingredients) {
-    const required = ingredient.quantity;
-    const nameMatches = stock.filter(
-      (item) => normalized(item.name) === normalized(ingredient.name),
-    );
-    const matchedStockItemIds = nameMatches.map((item) => item.id);
+    const match = matchIngredientToStock(ingredient, homeStockItems, remainingLedger);
+    ingredientMatches.push(match);
+    remainingLedger = match.remainingStockLedger;
 
-    if (required === null) {
-      failures.push({
-        code: 'unknown-required-quantity',
-        ingredientId: ingredient.id,
-        ingredientName: ingredient.name,
-        requiredQuantity: null,
-        unit: ingredient.unit,
-        matchedStockItemIds,
-        availableQuantity: null,
-        message: `${ingredient.name} has no confirmed recipe quantity.`,
-      });
-      continue;
-    }
-
-    if (!nameMatches.length) {
-      failures.push({
-        code: 'missing-stock',
-        ingredientId: ingredient.id,
-        ingredientName: ingredient.name,
-        requiredQuantity: required,
-        unit: ingredient.unit,
-        matchedStockItemIds: [],
-        availableQuantity: 0,
-        message: `${ingredient.name} is not in confirmed Home Stock.`,
-      });
-      continue;
-    }
-
-    if (nameMatches.length > 1) {
-      failures.push({
-        code: 'ambiguous-match',
-        ingredientId: ingredient.id,
-        ingredientName: ingredient.name,
-        requiredQuantity: required,
-        unit: ingredient.unit,
-        matchedStockItemIds,
-        availableQuantity: null,
-        message: `${ingredient.name} matches more than one Home Stock item.`,
-      });
-      continue;
-    }
-
-    const [match] = nameMatches;
-    if (normalized(match.unit) !== normalized(ingredient.unit)) {
-      failures.push({
-        code: 'incompatible-unit',
-        ingredientId: ingredient.id,
-        ingredientName: ingredient.name,
-        requiredQuantity: required,
-        unit: ingredient.unit,
-        matchedStockItemIds,
-        availableQuantity: match.quantity,
-        message: `${ingredient.name} needs ${ingredient.unit || 'a unit count'}, but Home Stock is recorded in ${match.unit || 'unit counts'}.`,
-      });
-      continue;
-    }
-
-    const available = remaining.get(match.id) ?? null;
-    if (available === null) {
-      failures.push({
-        code: 'unknown-stock-quantity',
-        ingredientId: ingredient.id,
-        ingredientName: ingredient.name,
-        requiredQuantity: required,
-        unit: ingredient.unit,
-        matchedStockItemIds,
-        availableQuantity: null,
-        message: `${ingredient.name} has no confirmed Home Stock quantity.`,
-      });
-      continue;
-    }
-
-    if (available < required) {
-      failures.push({
-        code: 'insufficient-stock',
-        ingredientId: ingredient.id,
-        ingredientName: ingredient.name,
-        requiredQuantity: required,
-        unit: ingredient.unit,
-        matchedStockItemIds,
-        availableQuantity: available,
-        message: `${ingredient.name} needs ${quantityLabel(required, ingredient.unit)}, but only ${quantityLabel(available, ingredient.unit)} is available.`,
-      });
-      continue;
-    }
-
-    remaining.set(match.id, available - required);
-    allocations.push({
+    allocations.push(...match.allocations.map((allocation) => ({
       ingredientId: ingredient.id,
       ingredientName: ingredient.name,
-      requiredQuantity: required,
+      requiredQuantity: ingredient.quantity ?? 0,
       unit: ingredient.unit,
-      stockItemId: match.id,
-      stockItemName: match.name,
-      allocatedQuantity: required,
-      useSoon: match.planningPriority === 'use-soon',
-    });
+      stockItemId: allocation.stockItemId,
+      stockItemName: allocation.stockItemName,
+      allocatedQuantity: allocation.allocatedQuantity,
+      baseQuantity: allocation.baseQuantity,
+      matchKind: allocation.matchKind,
+      useSoon: stockById.get(allocation.stockItemId)?.planningPriority === 'use-soon',
+    })));
+
+    const failure = failureForMatch(ingredient, match);
+    if (failure) failures.push(failure);
   }
 
   const useSoonItemIds = [
@@ -206,16 +189,26 @@ export function evaluateStockOnlyRecipe(
       : 'Every required ingredient is covered by confirmed Home Stock.'
     : failures.map((failure) => failure.message).join(' ');
 
-  return { recipe, eligible, allocations, failures, useSoonItemIds, reason };
+  return {
+    recipe,
+    eligible,
+    allocations,
+    failures,
+    ingredientMatches,
+    remainingStockLedger: remainingLedger,
+    useSoonItemIds,
+    reason,
+  };
 }
 
 /** Eligible recipes first, prioritising the number of distinct use-soon items. */
 export function rankStockOnlyRecipes(
   recipes: Recipe[],
   homeStockItems: HomeStockItem[],
+  initialLedger: StockLedger = createStockLedger(homeStockItems),
 ): StockOnlyRecipeEvaluation[] {
   return recipes
-    .map((recipe) => evaluateStockOnlyRecipe(recipe, homeStockItems))
+    .map((recipe) => evaluateStockOnlyRecipe(recipe, homeStockItems, initialLedger))
     .sort((left, right) => {
       if (left.eligible !== right.eligible) return left.eligible ? -1 : 1;
       if (left.eligible && right.eligible) {
@@ -227,12 +220,80 @@ export function rankStockOnlyRecipes(
     });
 }
 
+export interface LockedStockReservationResult {
+  remainingStockLedger: StockLedger;
+  failures: LockedStockReservationFailure[];
+}
+
+/** Reserves locked recipe requirements in deterministic plan-day order. */
+export function reserveLockedMealStock(
+  plan: MealPlan,
+  recipes: Recipe[],
+  homeStockItems: HomeStockItem[],
+  initialLedger: StockLedger = createStockLedger(homeStockItems),
+): LockedStockReservationResult {
+  const recipesById = new Map(recipes.map((recipe) => [recipe.id, recipe]));
+  let remainingStockLedger = initialLedger;
+  const failures: LockedStockReservationFailure[] = [];
+
+  for (const day of DAY_KEYS) {
+    const slot = plan.slots[day];
+    if (!slot.locked || !slot.recipeId || (slot.kind && slot.kind !== 'recipe')) continue;
+    const lockedRecipe = recipesById.get(slot.recipeId);
+    if (!lockedRecipe) continue;
+    const scale = slot.servings / Math.max(lockedRecipe.servings, 1);
+
+    for (const ingredient of lockedRecipe.ingredients) {
+      const scaledIngredient = {
+        ...ingredient,
+        quantity: ingredient.quantity === null
+          ? null
+          : Number((ingredient.quantity * scale).toFixed(6)),
+      };
+      const match = matchIngredientToStock(
+        scaledIngredient,
+        homeStockItems,
+        remainingStockLedger,
+      );
+      remainingStockLedger = match.remainingStockLedger;
+      const failure = failureForMatch(scaledIngredient, match);
+      if (failure) failures.push({ ...failure, day, recipeId: lockedRecipe.id });
+    }
+  }
+
+  return { remainingStockLedger, failures };
+}
+
+export interface StockOnlyPlanEvaluation {
+  recipeEvaluations: StockOnlyRecipeEvaluation[];
+  lockedReservationFailures: LockedStockReservationFailure[];
+  remainingStockLedger: StockLedger;
+}
+
+/** Evaluates suggestions against the balance left after all locked meals are reserved. */
+export function evaluateStockOnlyPlan(
+  plan: MealPlan,
+  recipes: Recipe[],
+  homeStockItems: HomeStockItem[],
+): StockOnlyPlanEvaluation {
+  const lockedReservations = reserveLockedMealStock(plan, recipes, homeStockItems);
+  return {
+    recipeEvaluations: rankStockOnlyRecipes(
+      recipes,
+      homeStockItems,
+      lockedReservations.remainingStockLedger,
+    ),
+    lockedReservationFailures: lockedReservations.failures,
+    remainingStockLedger: lockedReservations.remainingStockLedger,
+  };
+}
+
 function quantitiesFor(evaluation: StockOnlyRecipeEvaluation): Map<string, number> {
   const quantities = new Map<string, number>();
   for (const allocation of evaluation.allocations) {
     quantities.set(
       allocation.stockItemId,
-      (quantities.get(allocation.stockItemId) ?? 0) + allocation.allocatedQuantity,
+      (quantities.get(allocation.stockItemId) ?? 0) + allocation.baseQuantity,
     );
   }
   return quantities;
@@ -317,7 +378,12 @@ export function generateStockOnlyMealPlan(
   updatedAt: string,
 ): StockOnlyPlanResult {
   const constraintIds = new Set(constrainedStockItemIds);
-  const ranked = rankStockOnlyRecipes(recipes, homeStockItems);
+  const planEvaluation = evaluateStockOnlyPlan(plan, recipes, homeStockItems);
+  const lockedReservations = {
+    failures: planEvaluation.lockedReservationFailures,
+    remainingStockLedger: planEvaluation.remainingStockLedger,
+  };
+  const ranked = planEvaluation.recipeEvaluations;
   const eligible = ranked.filter((evaluation) => evaluation.eligible);
   const stockById = new Map(homeStockItems.map((item) => [item.id, item]));
   const failures: StockPlanConstraintFailure[] = [];
@@ -354,12 +420,18 @@ export function generateStockOnlyMealPlan(
     });
   }
   if (failures.length) {
-    return { ok: false, plan, failures, constrainedStockItemIds: [...constraintIds] };
+    return {
+      ok: false,
+      plan,
+      failures,
+      constrainedStockItemIds: [...constraintIds],
+      lockedReservationFailures: lockedReservations.failures,
+    };
   }
 
   const available = new Map(
-    activeFoodStock(homeStockItems).flatMap((item) =>
-      item.quantity === null ? [] : [[item.id, item.quantity] as const],
+    [...lockedReservations.remainingStockLedger].flatMap(([id, quantity]) =>
+      quantity === null ? [] : [[id, quantity] as const],
     ),
   );
   const constrained = chooseConstraintRecipes(eligible, constraintIds, openDays.length, available);
@@ -373,6 +445,7 @@ export function generateStockOnlyMealPlan(
         message: `The selected must-use items cannot fit together in a fully covered saved-recipe plan.`,
       })),
       constrainedStockItemIds: [...constraintIds],
+      lockedReservationFailures: lockedReservations.failures,
     };
   }
 
@@ -399,6 +472,7 @@ export function generateStockOnlyMealPlan(
         },
       ],
       constrainedStockItemIds: [],
+      lockedReservationFailures: lockedReservations.failures,
     };
   }
 
@@ -419,5 +493,6 @@ export function generateStockOnlyMealPlan(
     plan: { ...plan, slots: nextSlots, status: 'draft', updatedAt },
     suggestions: selected,
     constrainedStockItemIds: [...constraintIds],
+    lockedReservationFailures: lockedReservations.failures,
   };
 }

@@ -4,7 +4,9 @@ import {
   acceptReplenishmentSuggestion,
   buildReplenishmentSuggestions,
   buildShoppingList,
+  reconcileShoppingIngredient,
 } from './shopping';
+import { evaluateStockOnlyRecipe } from './stockPlanning';
 import type { HomeStockItem, Recipe } from './types';
 
 function stockItem(patch: Partial<HomeStockItem> = {}): HomeStockItem {
@@ -99,7 +101,7 @@ describe('buildShoppingList', () => {
     });
   });
 
-  it('marks matching stock with an incompatible unit for review without subtracting it', () => {
+  it('applies safe kg-to-g stock conversion', () => {
     const plan = createEmptyPlan('2026-08-03', 4);
     plan.slots.monday.recipeId = 'seed-salmon';
 
@@ -109,9 +111,59 @@ describe('buildShoppingList', () => {
 
     expect(salmon).toMatchObject({
       grossRecipeNeed: 600,
+      confirmedStockApplied: 600,
+      remainingBuyQuantity: 0,
+      requiresReview: false,
+    });
+  });
+
+  it('marks matching stock with an unsupported unit for review without subtracting it', () => {
+    const plan = createEmptyPlan('2026-08-03', 4);
+    plan.slots.monday.recipeId = 'seed-salmon';
+
+    const salmon = buildShoppingList(plan, SEED_RECIPES, [], [
+      stockItem({ quantity: 1, unit: 'bag' }),
+    ]).find((item) => item.name === 'salmon fillet');
+
+    expect(salmon).toMatchObject({
+      grossRecipeNeed: 600,
       confirmedStockApplied: 0,
       remainingBuyQuantity: 600,
       requiresReview: true,
+    });
+  });
+
+  it('uses the same alias classification and row allocation as strict stock planning', () => {
+    const tomatoRecipe: Recipe = {
+      ...SEED_RECIPES[0],
+      id: 'tomato-recipe',
+      ingredients: [
+        { id: 'tomato', name: 'tomato', quantity: 600, unit: 'g', category: 'produce' },
+      ],
+    };
+    const inventory = [
+      stockItem({ id: 'tomatoes-a', name: 'tomatoes', quantity: 0.25, unit: 'kg' }),
+      stockItem({ id: 'tomatoes-b', name: 'tomato', quantity: 350, unit: 'g' }),
+    ];
+    const shoppingMatch = reconcileShoppingIngredient(
+      tomatoRecipe.ingredients[0],
+      inventory,
+    );
+    const stockEvaluation = evaluateStockOnlyRecipe(tomatoRecipe, inventory);
+    const stockMatch = stockEvaluation.ingredientMatches[0];
+
+    expect(stockEvaluation.eligible).toBe(true);
+    expect(shoppingMatch.classification).toBe('alias');
+    expect(stockMatch.classification).toBe(shoppingMatch.classification);
+    expect(stockMatch.canonicalIngredient).toEqual(shoppingMatch.canonicalIngredient);
+    expect(stockMatch.allocations).toEqual(shoppingMatch.allocations);
+
+    const plan = createEmptyPlan('2026-08-03', 4);
+    plan.slots.monday.recipeId = tomatoRecipe.id;
+    expect(buildShoppingList(plan, [tomatoRecipe], [], inventory)[0]).toMatchObject({
+      confirmedStockApplied: 600,
+      remainingBuyQuantity: 0,
+      requiresReview: false,
     });
   });
 

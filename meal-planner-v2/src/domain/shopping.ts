@@ -7,9 +7,17 @@ import type {
   ShoppingItem,
 } from './types';
 import { CATEGORY_ORDER, DAY_KEYS } from './types';
+import {
+  createStockLedger,
+  matchIngredientToStock,
+  normalizeIngredientText,
+  type IngredientMatchRequest,
+  type IngredientMatchResult,
+  type StockLedger,
+} from './ingredientMatching';
 
 function normalized(value: string): string {
-  return value.trim().toLocaleLowerCase().replace(/\s+/g, ' ');
+  return normalizeIngredientText(value);
 }
 
 function shoppingKey(name: string, unit: string): string {
@@ -206,23 +214,16 @@ export function buildShoppingList(
   }
 
   const activeFoodStock = homeStockItems.filter((item) => item.kind === 'food' && !item.archived);
+  let stockLedger = createStockLedger(activeFoodStock);
   for (const item of aggregated.values()) {
-    const nameMatches = activeFoodStock.filter(
-      (stockItem) => normalized(stockItem.name) === normalized(item.name),
+    const match = reconcileShoppingIngredient(
+      { name: item.name, quantity: item.grossRecipeNeed, unit: item.unit },
+      activeFoodStock,
+      stockLedger,
     );
-    if (!nameMatches.length) continue;
+    stockLedger = match.remainingStockLedger;
 
-    const compatibleMatches = nameMatches.filter(
-      (stockItem) => normalized(stockItem.unit) === normalized(item.unit),
-    );
-    const hasIncompatibleUnit = compatibleMatches.length !== nameMatches.length;
-    const hasUnknownQuantity = compatibleMatches.some((stockItem) => stockItem.quantity === null);
-    if (
-      hasIncompatibleUnit ||
-      hasUnknownQuantity ||
-      item.grossRecipeNeed === null ||
-      !compatibleMatches.length
-    ) {
+    if (match.classification === 'review') {
       // A household may explicitly review an ambiguous match and choose to buy the full
       // recipe amount. Preserve that decision across a refresh instead of silently
       // applying stock in a unit we cannot safely reconcile.
@@ -232,13 +233,12 @@ export function buildShoppingList(
       item.requiresReview = previous?.requiresReview !== false;
       continue;
     }
+    if (match.classification === 'unmatched') continue;
 
-    const available = compatibleMatches.reduce(
-      (total, stockItem) => total + (stockItem.quantity ?? 0),
-      0,
-    );
-    item.confirmedStockApplied = rounded(Math.min(available, item.grossRecipeNeed));
-    item.remainingBuyQuantity = rounded(item.grossRecipeNeed - item.confirmedStockApplied);
+    item.confirmedStockApplied = rounded(match.totalConfirmedQuantity);
+    item.remainingBuyQuantity = match.remainingRequirement === null
+      ? null
+      : rounded(match.remainingRequirement);
   }
 
   const retainedItems: ShoppingItem[] = [];
@@ -281,6 +281,15 @@ export function buildShoppingList(
   return [...aggregated.values(), ...retainedItems].sort((left, right) =>
     left.name.localeCompare(right.name),
   );
+}
+
+/** Shared shopping reconciliation entry point used by parity tests and buildShoppingList. */
+export function reconcileShoppingIngredient(
+  request: IngredientMatchRequest,
+  homeStockItems: readonly HomeStockItem[],
+  ledger?: StockLedger,
+): IngredientMatchResult {
+  return matchIngredientToStock(request, homeStockItems, ledger);
 }
 
 export function formatQuantity(item: ShoppingItem): string {

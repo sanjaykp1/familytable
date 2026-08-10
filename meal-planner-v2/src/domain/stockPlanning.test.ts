@@ -115,6 +115,27 @@ describe('strict stock-only recipe eligibility', () => {
     expect(short.failures[0]).toMatchObject({ code: 'insufficient-stock', availableQuantity: 200 });
   });
 
+  it('aggregates multiple compatible alias rows with safe unit conversion', () => {
+    const result = evaluateStockOnlyRecipe(
+      recipe('dinner', 'Tomato dinner', [ingredient('tomato', 'tomato', 600, 'g')]),
+      [
+        stock('tomatoes-a', 'tomatoes', 0.25, 'kg'),
+        stock('tomatoes-b', 'tomato', 350, 'g'),
+      ],
+    );
+
+    expect(result.eligible).toBe(true);
+    expect(result.ingredientMatches[0]).toMatchObject({
+      classification: 'alias',
+      totalConfirmedQuantity: 600,
+      remainingRequirement: 0,
+    });
+    expect(result.allocations).toEqual([
+      expect.objectContaining({ stockItemId: 'tomatoes-a', allocatedQuantity: 250 }),
+      expect.objectContaining({ stockItemId: 'tomatoes-b', allocatedQuantity: 350 }),
+    ]);
+  });
+
   it('rejects matching stock recorded in an incompatible unit', () => {
     const result = evaluateStockOnlyRecipe(
       recipe('dinner', 'Rice dinner', [ingredient('rice', 'Rice', 300, 'g')]),
@@ -171,5 +192,62 @@ describe('strict stock-only recipe eligibility', () => {
 
     expect(first.map((item) => item.recipe.id)).toEqual(['a-id', 'z-id', 'b-id']);
     expect(second.map((item) => item.recipe.id)).toEqual(['a-id', 'z-id', 'b-id']);
+  });
+
+  it('reserves stock for a locked meal before funding generated meals', () => {
+    const locked = recipe('locked', 'Locked tomato dinner', [
+      ingredient('locked-tomato', 'tomatoes', 100),
+    ]);
+    const generated = recipe('generated', 'Open tomato dinner', [
+      ingredient('generated-tomato', 'tomato', 100),
+    ]);
+    const plan = createEmptyPlan('2026-08-10', 4);
+    plan.slots.monday = { recipeId: locked.id, locked: true, servings: 4 };
+    const inventory = [stock('stock-tomato', 'tomato', 100)];
+
+    const result = generateStockOnlyMealPlan(
+      plan,
+      [locked, generated],
+      inventory,
+      [],
+      '2026-08-10T09:00:00.000Z',
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.plan).toBe(plan);
+    expect(result.lockedReservationFailures).toEqual([]);
+    expect(inventory[0].quantity).toBe(100);
+  });
+
+  it('reserves all confirmed stock for an insufficient locked meal and reports the shortage', () => {
+    const locked = recipe('locked', 'Locked tomato dinner', [
+      ingredient('locked-tomato', 'tomatoes', 150),
+    ]);
+    const generated = recipe('generated', 'Small tomato dinner', [
+      ingredient('generated-tomato', 'tomato', 50),
+    ]);
+    const plan = createEmptyPlan('2026-08-10', 4);
+    plan.slots.monday = { recipeId: locked.id, locked: true, servings: 4 };
+    const inventory = [stock('stock-tomato', 'tomato', 100)];
+
+    const result = generateStockOnlyMealPlan(
+      plan,
+      [locked, generated],
+      inventory,
+      [],
+      '2026-08-10T09:00:00.000Z',
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.lockedReservationFailures).toEqual([
+      expect.objectContaining({
+        day: 'monday',
+        recipeId: 'locked',
+        code: 'insufficient-stock',
+        requiredQuantity: 150,
+        availableQuantity: 100,
+      }),
+    ]);
+    expect(inventory[0].quantity).toBe(100);
   });
 });

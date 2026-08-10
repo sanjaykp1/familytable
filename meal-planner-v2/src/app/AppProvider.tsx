@@ -311,7 +311,15 @@ export function AppProvider({
         new Date().toISOString(),
       );
       if (!result.ok) {
-        notify(result.failures.map((failure) => failure.message).join(' '), 'error');
+        notify(
+          [
+            ...new Set([
+              ...result.lockedReservationFailures.map((failure) => failure.message),
+              ...result.failures.map((failure) => failure.message),
+            ]),
+          ].join(' '),
+          'error',
+        );
         return result;
       }
 
@@ -330,6 +338,12 @@ export function AppProvider({
         `Planned ${result.suggestions.length} stock-only dinner${result.suggestions.length === 1 ? '' : 's'}. Home Stock was not adjusted.`,
         'success',
       );
+      if (result.lockedReservationFailures.length) {
+        notify(
+          `Locked meal stock needs review: ${result.lockedReservationFailures.map((failure) => failure.message).join(' ')}`,
+          'info',
+        );
+      }
       return result;
     },
     [activeWeek, currentPlan, notify, state.homeStockItems, state.recipes],

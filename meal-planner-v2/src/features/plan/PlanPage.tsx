@@ -32,7 +32,7 @@ import {
 } from '../../domain/date';
 import { canMakeAhead, COOK_ATTENTION_LABELS, MAKE_AHEAD_LABELS } from '../../domain/recipeEffort';
 import { MAX_MEAL_SERVINGS, MIN_MEAL_SERVINGS } from '../../domain/planner';
-import { rankStockOnlyRecipes } from '../../domain/stockPlanning';
+import { evaluateStockOnlyPlan } from '../../domain/stockPlanning';
 import type { DayKey, MealSlotKind } from '../../domain/types';
 import { DAY_KEYS } from '../../domain/types';
 import { WeatherDayInline, WeatherPlanControl } from '../weather/WeatherWeek';
@@ -103,10 +103,11 @@ export function PlanPage({
     () => new Map(state.recipes.map((recipe) => [recipe.id, recipe])),
     [state.recipes],
   );
-  const stockOnlyRecipes = useMemo(
-    () => rankStockOnlyRecipes(state.recipes, state.homeStockItems),
-    [state.homeStockItems, state.recipes],
+  const stockOnlyPlan = useMemo(
+    () => evaluateStockOnlyPlan(currentPlan, state.recipes, state.homeStockItems),
+    [currentPlan, state.homeStockItems, state.recipes],
   );
+  const stockOnlyRecipes = stockOnlyPlan.recipeEvaluations;
   const eligibleStockOnly = stockOnlyRecipes.filter((evaluation) => evaluation.eligible);
   const ineligibleStockOnly = stockOnlyRecipes.filter((evaluation) => !evaluation.eligible);
   const decidedCount = DAY_KEYS.filter((day) => {
@@ -469,10 +470,26 @@ export function PlanPage({
         <Modal
           wide
           title="Cook from what I have"
-          description="Strict matches from saved recipes only. Quantities and units must be confirmed; nothing is reserved or deducted."
+          description="Strict matches from saved recipes only. Locked meals are reserved in this draft; Home Stock is never deducted."
           onClose={() => setShowStockOnly(false)}
         >
           <div className="stock-only-results">
+            {stockOnlyPlan.lockedReservationFailures.length ? (
+              <section
+                className="stock-only-results__section"
+                aria-label="Locked meal stock review"
+              >
+                <div>
+                  <span className="eyebrow">Locked meals need review</span>
+                  <h3>Confirmed stock does not fully cover every locked dinner</h3>
+                </div>
+                <ul>
+                  {stockOnlyPlan.lockedReservationFailures.map((failure) => (
+                    <li key={`${failure.day}-${failure.ingredientId}`}>{failure.message}</li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
             {eligibleStockOnly.length ? (
               <section className="stock-only-results__section" aria-label="Stock-only suggestions">
                 <div className="stock-only-results__heading">
@@ -493,7 +510,7 @@ export function PlanPage({
                       </div>
                       <ul>
                         {evaluation.allocations.map((allocation) => (
-                          <li key={allocation.ingredientId}>
+                          <li key={`${allocation.ingredientId}-${allocation.stockItemId}`}>
                             <Check aria-hidden="true" size={15} />
                             <span>
                               {allocation.ingredientName}: {allocation.allocatedQuantity}
