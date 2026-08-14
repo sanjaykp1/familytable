@@ -53,7 +53,13 @@ export function generateMealPlan(
     const unused = recipes.filter((recipe) => !used.has(recipe.id));
     const candidates = unused.length ? unused : recipes;
     const picked = weightedPick(candidates, day, plan.weekStart, random);
-    nextSlots[day] = { ...slot, kind: 'recipe', recipeId: picked?.id ?? null };
+    nextSlots[day] = {
+      ...slot,
+      kind: 'recipe',
+      recipeId: picked?.id ?? null,
+      cookedAt: undefined,
+      lastCookedAtBeforeCooking: undefined,
+    };
     if (picked) used.add(picked.id);
   }
 
@@ -90,6 +96,8 @@ export function replaceMeal(
         ...plan.slots[day],
         kind: 'recipe',
         recipeId: picked?.id ?? currentId,
+        cookedAt: undefined,
+        lastCookedAtBeforeCooking: undefined,
       },
     },
     status: 'draft',

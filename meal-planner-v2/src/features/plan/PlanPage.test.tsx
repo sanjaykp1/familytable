@@ -165,6 +165,14 @@ describe('PlanPage', () => {
     expect(
       page.snapshot()!.recipes.find((recipe) => recipe.id === mondayRecipeId)?.timesCooked,
     ).toBe(cookedBefore + 1);
+    expect(page.container.querySelector('.day-row--cooked')).not.toBeNull();
+    expect(page.container.textContent).toContain('Cooked');
+
+    await click(buttonWithLabel(page.container, 'Mark Mon dinner cooked'));
+    expect(
+      page.snapshot()!.recipes.find((recipe) => recipe.id === mondayRecipeId)?.timesCooked,
+    ).toBe(cookedBefore);
+    expect(page.container.querySelector('.day-row--cooked')).toBeNull();
     expect(page.snapshot()!.homeStockItems[0].quantity).toBe(200);
 
     await click(buttonNamed(page.container, 'Ready to shop'));

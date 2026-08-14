@@ -262,6 +262,8 @@ export function AppProvider({
             kind,
             recipeId: kind === 'recipe' ? recipeId : null,
             locked: kind === 'recipe' && recipeId ? plan.slots[day].locked : false,
+            cookedAt: undefined,
+            lastCookedAtBeforeCooking: undefined,
           },
         },
         status: 'draft',
@@ -358,24 +360,69 @@ export function AppProvider({
 
   const markCooked = useCallback(
     (day: DayKey) => {
-      const recipeId = currentPlan.slots[day].recipeId;
-      if (!recipeId) return;
-      setState((current) => ({
-        ...current,
-        recipes: current.recipes.map((recipe) =>
-          recipe.id === recipeId
-            ? {
-                ...recipe,
-                lastCookedAt: toISODateLocal(new Date()),
-                timesCooked: recipe.timesCooked + 1,
-                updatedAt: new Date().toISOString(),
-              }
-            : recipe,
-        ),
-      }));
-      notify('Dinner logged. It will be deprioritised next week.', 'success');
+      const now = new Date();
+      const today = toISODateLocal(now);
+      const updatedAt = now.toISOString();
+      let changed = false;
+      let wasCooked = false;
+
+      setState((current) => {
+        const plan = current.plans[activeWeek];
+        const slot = plan?.slots[day];
+        if (!plan || !slot?.recipeId) return current;
+
+        const recipe = current.recipes.find((item) => item.id === slot.recipeId);
+        if (!recipe) return current;
+
+        changed = true;
+        wasCooked = Boolean(slot.cookedAt);
+        const nextSlot = wasCooked
+          ? { ...slot, cookedAt: undefined, lastCookedAtBeforeCooking: undefined }
+          : {
+              ...slot,
+              cookedAt: today,
+              lastCookedAtBeforeCooking: recipe.lastCookedAt,
+            };
+
+        return {
+          ...current,
+          plans: {
+            ...current.plans,
+            [activeWeek]: {
+              ...plan,
+              slots: { ...plan.slots, [day]: nextSlot },
+              updatedAt,
+            },
+          },
+          recipes: current.recipes.map((item) =>
+            item.id !== slot.recipeId
+              ? item
+              : wasCooked
+                ? {
+                    ...item,
+                    lastCookedAt: slot.lastCookedAtBeforeCooking ?? null,
+                    timesCooked: Math.max(0, item.timesCooked - 1),
+                    updatedAt,
+                  }
+                : {
+                    ...item,
+                    lastCookedAt: today,
+                    timesCooked: item.timesCooked + 1,
+                    updatedAt,
+                  },
+          ),
+        };
+      });
+
+      if (!changed) return;
+      notify(
+        wasCooked
+          ? 'Dinner marked as not cooked. Cooking history restored.'
+          : 'Dinner marked cooked. It will be deprioritised next week.',
+        'success',
+      );
     },
-    [currentPlan.slots, notify],
+    [activeWeek, notify],
   );
 
   const markPlanReady = useCallback(() => {

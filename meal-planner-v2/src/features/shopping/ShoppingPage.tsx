@@ -822,9 +822,11 @@ export function ShoppingPage({ onOpenPlan }: { onOpenPlan: () => void }) {
                 >
                   <div className="stock-card__heading">
                     <div>
-                      <span className="eyebrow">
-                        {item.location} · {item.kind}
-                      </span>
+                      {stockLayout === 'cards' ? (
+                        <span className="eyebrow">
+                          {item.location} · {item.kind}
+                        </span>
+                      ) : null}
                       <h2>{item.name}</h2>
                     </div>
                     <div className="stock-card__badges">
@@ -840,8 +842,11 @@ export function ShoppingPage({ onOpenPlan }: { onOpenPlan: () => void }) {
                       ) : null}
                     </div>
                   </div>
-                  <p className="stock-card__meta">{item.category}</p>
-                  <strong className="stock-card__quantity">{stockQuantity(item)}</strong>
+                  <p className="stock-card__meta">
+                    {stockLayout === 'cards'
+                      ? item.category
+                      : `${item.location} · ${item.kind === 'food' ? 'Food' : 'Household'} · ${item.category}`}
+                  </p>
                   {item.reorderPoint !== undefined &&
                   item.reorderPoint !== null &&
                   item.targetQuantity !== undefined &&
@@ -852,48 +857,51 @@ export function ShoppingPage({ onOpenPlan }: { onOpenPlan: () => void }) {
                         : `Suggest at ${item.reorderPoint}${item.unit ? ` ${item.unit}` : ''} · target ${item.targetQuantity}${item.unit ? ` ${item.unit}` : ''}${item.replenishmentSuggestionStatus === 'dismissed' ? ' · suggestion dismissed' : ''}`}
                     </small>
                   ) : null}
-                  {item.quantity === 0 ? (
-                    <div className="stock-card__quantity-controls stock-card__quantity-controls--empty">
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={() => addHomeStockItemToShopping(item.id)}
+                  <div className="stock-card__inventory">
+                    <strong className="stock-card__quantity">{stockQuantity(item)}</strong>
+                    {item.quantity === 0 ? (
+                      <div className="stock-card__quantity-controls stock-card__quantity-controls--empty">
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => addHomeStockItemToShopping(item.id)}
+                        >
+                          Add to shop
+                        </Button>
+                      </div>
+                    ) : (
+                      <div
+                        className="stock-card__quantity-controls"
+                        aria-label={`Adjust ${item.name} quantity`}
                       >
-                        Add to shop
-                      </Button>
-                    </div>
-                  ) : (
-                    <div
-                      className="stock-card__quantity-controls"
-                      aria-label={`Adjust ${item.name} quantity`}
-                    >
-                      <Button
-                        variant="secondary"
-                        size="icon"
-                        onClick={() => adjustHomeStockQuantity(item.id, -1)}
-                        aria-label={`Decrease ${item.name} quantity`}
-                        title="Decrease quantity"
-                      >
-                        <Minus aria-hidden="true" size={18} />
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="icon"
-                        onClick={() => adjustHomeStockQuantity(item.id, 1)}
-                        aria-label={`Increase ${item.name} quantity`}
-                        title="Increase quantity"
-                      >
-                        <Plus aria-hidden="true" size={18} />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => markHomeStockUsedUp(item.id)}
-                      >
-                        Mark used up
-                      </Button>
-                    </div>
-                  )}
+                        <Button
+                          variant="secondary"
+                          size="icon"
+                          onClick={() => adjustHomeStockQuantity(item.id, -1)}
+                          aria-label={`Decrease ${item.name} quantity`}
+                          title="Decrease quantity"
+                        >
+                          <Minus aria-hidden="true" size={18} />
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="icon"
+                          onClick={() => adjustHomeStockQuantity(item.id, 1)}
+                          aria-label={`Increase ${item.name} quantity`}
+                          title="Increase quantity"
+                        >
+                          <Plus aria-hidden="true" size={18} />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => markHomeStockUsedUp(item.id)}
+                        >
+                          Mark used up
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                   <div className="stock-card__footer">
                     <Button
                       variant="ghost"

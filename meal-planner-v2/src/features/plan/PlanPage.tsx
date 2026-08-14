@@ -257,7 +257,7 @@ export function PlanPage({
               const date = dayDate(activeWeek, day);
               return (
                 <article
-                  className={`day-row ${recipe || special ? 'day-row--filled' : ''}`}
+                  className={`day-row ${recipe || special ? 'day-row--filled' : ''} ${slot.cookedAt ? 'day-row--cooked' : ''}`}
                   key={day}
                 >
                   <div className="day-row__date">
@@ -409,13 +409,18 @@ export function PlanPage({
                           <RefreshCw aria-hidden="true" size={18} />
                         </Button>
                         <Button
-                          variant="ghost"
-                          size="icon"
+                          variant={slot.cookedAt ? 'secondary' : 'ghost'}
+                          className="cooked-action"
                           onClick={() => markCooked(day)}
                           aria-label={`Mark ${DAY_LABELS[day]} dinner cooked`}
-                          title="Mark cooked"
+                          title={slot.cookedAt ? 'Mark as not cooked' : 'Mark cooked'}
                         >
-                          <Check aria-hidden="true" size={19} />
+                          {slot.cookedAt ? (
+                            <CheckCircle2 aria-hidden="true" size={18} />
+                          ) : (
+                            <Check aria-hidden="true" size={19} />
+                          )}
+                          <span>{slot.cookedAt ? 'Cooked' : 'Mark cooked'}</span>
                         </Button>
                       </>
                     ) : null}

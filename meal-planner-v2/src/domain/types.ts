@@ -55,6 +55,10 @@ export interface MealSlot {
   kind?: MealSlotKind;
   locked: boolean;
   servings: number;
+  /** A local record that this specific planned dinner was cooked. */
+  cookedAt?: string;
+  /** Lets “mark as not cooked” restore the recipe's previous history. */
+  lastCookedAtBeforeCooking?: string | null;
 }
 
 export interface MealPlan {

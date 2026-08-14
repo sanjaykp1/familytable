@@ -205,11 +205,21 @@ function normalizeMealSlot(value: unknown): MealSlot {
   if (typeof value.locked !== 'boolean') invalid('a meal slot lock');
   const servings = requireNumber(value.servings, 'a meal slot serving count', 1);
   if (!Number.isInteger(servings)) invalid('a meal slot serving count');
+  const cookedAt =
+    value.cookedAt === undefined ? undefined : requireString(value.cookedAt, 'a meal cooked date');
+  const lastCookedAtBeforeCooking =
+    value.lastCookedAtBeforeCooking === undefined
+      ? undefined
+      : value.lastCookedAtBeforeCooking === null
+        ? null
+        : requireString(value.lastCookedAtBeforeCooking, 'a previous recipe cooked date');
   return {
     recipeId,
     kind: isOneOf(value.kind, MEAL_SLOT_KINDS) ? value.kind : 'recipe',
     locked: value.locked,
     servings,
+    ...(cookedAt === undefined ? {} : { cookedAt }),
+    ...(lastCookedAtBeforeCooking === undefined ? {} : { lastCookedAtBeforeCooking }),
   };
 }
 

@@ -699,7 +699,8 @@ h3 {
   grid-template-columns: 4.5rem minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-4);
-  border-bottom: 1px solid var(--colour-border);
+  /* Keep the week easy to scan without turning it into a ruled table. */
+  border-bottom: 1px solid color-mix(in srgb, var(--colour-border) 52%, transparent);
 }
 
 .plan-card--with-weather .day-row {
@@ -763,6 +764,16 @@ h3 {
   border-bottom: 0;
 }
 
+.day-row--cooked {
+  background: color-mix(in srgb, var(--colour-sage-soft) 40%, transparent);
+}
+
+.day-row--cooked .meal-select {
+  color: var(--colour-text-soft);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--colour-sage) 62%, transparent);
+}
+
 .day-row__date strong,
 .day-row__date span {
   display: block;
@@ -788,12 +799,16 @@ h3 {
   width: 100%;
   min-height: 2.75rem;
   padding: 0 2.4rem 0 var(--space-3);
-  background: var(--colour-surface);
-  border: 1px solid var(--colour-border);
+  background: color-mix(in srgb, var(--colour-surface) 64%, var(--colour-surface-inset));
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   color: var(--colour-text);
   cursor: pointer;
   font-weight: 660;
+}
+
+.meal-select:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--colour-border) 58%, transparent);
 }
 
 .meal-select:disabled {
@@ -844,12 +859,16 @@ h3 {
   width: 2.5rem;
   min-height: 2.75rem;
   padding: 0 var(--space-1);
-  border: 1px solid var(--colour-border);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  background: var(--colour-surface);
+  background: color-mix(in srgb, var(--colour-surface) 64%, var(--colour-surface-inset));
   color: var(--colour-text);
   font: inherit;
   text-align: center;
+}
+
+.serving-control input:hover {
+  border-color: color-mix(in srgb, var(--colour-border) 58%, transparent);
 }
 
 .serving-control input::-webkit-inner-spin-button,
@@ -877,6 +896,17 @@ h3 {
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-1);
+}
+
+.cooked-action.button {
+  min-width: auto;
+  padding-inline: var(--space-3);
+  white-space: nowrap;
+}
+
+.cooked-action.button--secondary {
+  border-color: color-mix(in srgb, var(--colour-sage) 30%, var(--colour-border));
+  color: var(--colour-sage);
 }
 
 /* The planner is primarily a weekly dashboard on desktop. Keep all seven
@@ -1079,6 +1109,12 @@ h3 {
     width: 2.25rem;
     min-width: 2.25rem;
     min-height: 2.25rem;
+  }
+
+  .page-stack--plan .day-row__actions .cooked-action.button {
+    width: auto;
+    min-width: auto;
+    padding-inline: var(--space-2);
   }
 
   .page-stack--plan .plan-card__footer {
@@ -2135,8 +2171,8 @@ h3 {
 .stock-list__item {
   display: grid;
   grid-template-areas:
-    'heading quantity'
-    'meta controls'
+    'heading inventory'
+    'meta footer'
     'rule footer';
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -2153,20 +2189,13 @@ h3 {
   margin: 0;
 }
 
-.stock-list__item .stock-card__quantity {
-  grid-area: quantity;
-  font-size: 1.35rem;
-  text-align: right;
-  white-space: nowrap;
-}
-
 .stock-list__item .stock-card__rule {
   grid-area: rule;
 }
 
-.stock-list__item .stock-card__quantity-controls {
-  grid-area: controls;
-  justify-content: flex-end;
+.stock-list__item .stock-card__inventory {
+  grid-area: inventory;
+  align-items: flex-end;
 }
 
 .stock-list__item .stock-card__footer {
@@ -2225,6 +2254,17 @@ h3 {
   font-size: 1.65rem;
   font-weight: 650;
   letter-spacing: -0.05em;
+}
+
+.stock-card__inventory {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.stock-list__item .stock-card__quantity {
+  font-size: 1.2rem;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .stock-card__rule {
@@ -2962,9 +3002,8 @@ h3 {
   .stock-list__item {
     grid-template-areas:
       'heading'
-      'quantity'
       'meta'
-      'controls'
+      'inventory'
       'rule'
       'footer';
   }
@@ -2973,13 +3012,14 @@ h3 {
     justify-content: flex-start;
   }
 
-  .stock-list__item .stock-card__quantity {
-    text-align: left;
-  }
-
-  .stock-list__item .stock-card__quantity-controls,
+  .stock-list__item .stock-card__inventory,
   .stock-list__item .stock-card__footer {
     justify-content: flex-start;
+    align-items: flex-start;
+  }
+
+  .stock-list__item .stock-card__quantity {
+    text-align: left;
   }
 
   .settings-card--wide {
