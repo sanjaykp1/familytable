@@ -42,7 +42,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       (async () => {
         const cache = await caches.open(PRECACHE_CACHE);
-        return (await cache.match('/index.html')) ?? fetch(request);
+        return (await cache.match('/')) ?? fetch(request);
       })(),
     );
     return;
