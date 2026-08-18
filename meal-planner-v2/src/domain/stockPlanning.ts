@@ -410,7 +410,7 @@ export function generateStockOnlyMealPlan(
 
   const openDays = DAY_KEYS.filter((day) => {
     const slot = plan.slots[day];
-    return !slot.locked && (!slot.kind || slot.kind === 'recipe');
+    return !slot.locked && !slot.cuisineIntent && (!slot.kind || slot.kind === 'recipe');
   });
   if (constraintIds.size && !openDays.length) {
     failures.push({
@@ -484,6 +484,7 @@ export function generateStockOnlyMealPlan(
       ...nextSlots[day],
       kind: 'recipe',
       recipeId: evaluation.recipe.id,
+      cuisineIntent: undefined,
       servings: evaluation.recipe.servings,
     };
   });

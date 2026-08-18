@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { useApp } from '../../app/AppProvider';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
+import { CuisineChips, type CuisineChipValue } from '../../components/ui/CuisineChips';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Modal } from '../../components/ui/Modal';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -14,15 +15,121 @@ import {
   MAKE_AHEAD_LABELS,
 } from '../../domain/recipeEffort';
 import type { Recipe } from '../../domain/types';
+import { CUISINE_IDS, CUISINE_LABELS } from '../../domain/types';
 import { RecipeForm } from './RecipeForm';
 
 type RecipeFilter = 'all' | 'make-ahead' | 'low-attention';
+type CuisineFilter = CuisineChipValue;
 type RecipeLayout = 'cards' | 'list';
+
+function RecipeCollection({
+  recipes,
+  layout,
+  onToggleFavourite,
+  onEdit,
+  onDelete,
+  grouped = false,
+}: {
+  recipes: Recipe[];
+  layout: RecipeLayout;
+  onToggleFavourite: (recipeId: string) => void;
+  onEdit: (recipe: Recipe) => void;
+  onDelete: (recipe: Recipe) => void;
+  grouped?: boolean;
+}) {
+  return (
+    <div
+      className={layout === 'cards' ? 'recipe-grid' : 'recipe-list'}
+      role="list"
+      aria-label="Recipes"
+    >
+      {recipes.map((recipe) => (
+        <Card
+          className={layout === 'cards' ? 'recipe-card' : 'recipe-list__item'}
+          key={recipe.id}
+          role="listitem"
+        >
+          {layout === 'cards' ? (
+            <div className="recipe-card__accent" aria-hidden="true">
+              <span>{recipe.seasons[0]?.slice(0, 1).toUpperCase() ?? 'A'}</span>
+            </div>
+          ) : null}
+          <div className={layout === 'cards' ? 'recipe-card__body' : 'recipe-list__body'}>
+            <div className="recipe-card__title-row">
+              <div>
+                {grouped ? <h3>{recipe.name}</h3> : <h2>{recipe.name}</h2>}
+                <p>{recipe.description || 'A dependable family dinner.'}</p>
+              </div>
+            </div>
+            <div className="recipe-card__meta">
+              <span>
+                <Clock3 aria-hidden="true" size={16} /> Prep {recipe.prepMinutes} min
+              </span>
+              <span>
+                <Flame aria-hidden="true" size={16} /> Cook {recipe.cookMinutes} min
+              </span>
+              <span>
+                <Users aria-hidden="true" size={16} /> {recipe.servings}
+              </span>
+            </div>
+            {layout === 'cards' ? (
+              <div className="tag-list">
+                <span className="tag-list__feature">
+                  {COOK_ATTENTION_LABELS[recipe.cookAttention]}
+                </span>
+                {canMakeAhead(recipe.makeAhead) ? (
+                  <span className="tag-list__feature">{MAKE_AHEAD_LABELS[recipe.makeAhead]}</span>
+                ) : null}
+                {recipe.tags.slice(0, 3).map((tag) => (
+                  <span key={tag}>{tag}</span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <footer className={layout === 'cards' ? 'recipe-card__actions' : 'recipe-list__actions'}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="recipe-card__favourite"
+              onClick={() => onToggleFavourite(recipe.id)}
+              aria-label={
+                recipe.favourite
+                  ? `Remove ${recipe.name} from household favourites`
+                  : `Add ${recipe.name} to household favourites`
+              }
+              aria-pressed={recipe.favourite}
+              title={recipe.favourite ? 'Remove household favourite' : 'Add household favourite'}
+            >
+              <Heart
+                aria-hidden="true"
+                size={18}
+                fill={recipe.favourite ? 'currentColor' : 'none'}
+              />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => onEdit(recipe)}>
+              <Pencil aria-hidden="true" size={16} /> Edit
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => onDelete(recipe)}
+              aria-label={`Delete ${recipe.name}`}
+              title="Delete recipe"
+            >
+              <Trash2 aria-hidden="true" size={17} />
+            </Button>
+          </footer>
+        </Card>
+      ))}
+    </div>
+  );
+}
 
 export function RecipesPage() {
   const { state, upsertRecipe, toggleRecipeFavourite, deleteRecipe } = useApp();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<RecipeFilter>('all');
+  const [cuisineFilter, setCuisineFilter] = useState<CuisineFilter>('all');
   const [layout, setLayout] = useState<RecipeLayout>('cards');
   const [editing, setEditing] = useState<Recipe | 'new' | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Recipe | null>(null);
@@ -39,9 +146,24 @@ export function RecipesPage() {
         filter === 'all' ||
         (filter === 'make-ahead' && canMakeAhead(recipe.makeAhead)) ||
         (filter === 'low-attention' && isLowAttention(recipe.cookAttention));
-      return matchesQuery && matchesFilter;
+      const matchesCuisine = cuisineFilter === 'all' || recipe.cuisine === cuisineFilter;
+      return matchesQuery && matchesFilter && matchesCuisine;
     });
-  }, [filter, query, state.recipes]);
+  }, [cuisineFilter, filter, query, state.recipes]);
+
+  const grouped = useMemo(
+    () =>
+      CUISINE_IDS.map((cuisine) => ({
+        cuisine,
+        recipes: filtered.filter((recipe) => recipe.cuisine === cuisine),
+      })).filter((group) => group.recipes.length > 0),
+    [filtered],
+  );
+  const availableCuisines = useMemo(
+    () => CUISINE_IDS.filter((cuisine) => state.recipes.some((recipe) => recipe.cuisine === cuisine)),
+    [state.recipes],
+  );
+  const showCuisineGroups = cuisineFilter === 'all' && query.trim() === '';
 
   return (
     <div className="page-stack page-stack--compact">
@@ -97,97 +219,43 @@ export function RecipesPage() {
           />
           <span>{filtered.length} recipes</span>
         </div>
+        <CuisineChips
+          value={cuisineFilter}
+          cuisines={availableCuisines}
+          onChange={setCuisineFilter}
+        />
       </div>
 
       {filtered.length ? (
-        <section
-          className={layout === 'cards' ? 'recipe-grid' : 'recipe-list'}
-          aria-label="Recipes"
-        >
-          {filtered.map((recipe) => (
-            <Card
-              className={layout === 'cards' ? 'recipe-card' : 'recipe-list__item'}
-              key={recipe.id}
-            >
-              {layout === 'cards' ? (
-                <div className="recipe-card__accent" aria-hidden="true">
-                  <span>{recipe.seasons[0]?.slice(0, 1).toUpperCase() ?? 'A'}</span>
-                </div>
-              ) : null}
-              <div className={layout === 'cards' ? 'recipe-card__body' : 'recipe-list__body'}>
-                <div className="recipe-card__title-row">
-                  <div>
-                    <h2>{recipe.name}</h2>
-                    <p>{recipe.description || 'A dependable family dinner.'}</p>
-                  </div>
-                </div>
-                <div className="recipe-card__meta">
-                  <span>
-                    <Clock3 aria-hidden="true" size={16} /> Prep {recipe.prepMinutes} min
-                  </span>
-                  <span>
-                    <Flame aria-hidden="true" size={16} /> Cook {recipe.cookMinutes} min
-                  </span>
-                  <span>
-                    <Users aria-hidden="true" size={16} /> {recipe.servings}
-                  </span>
-                </div>
-                {layout === 'cards' ? (
-                  <div className="tag-list">
-                    <span className="tag-list__feature">
-                      {COOK_ATTENTION_LABELS[recipe.cookAttention]}
-                    </span>
-                    {canMakeAhead(recipe.makeAhead) ? (
-                      <span className="tag-list__feature">
-                        {MAKE_AHEAD_LABELS[recipe.makeAhead]}
-                      </span>
-                    ) : null}
-                    {recipe.tags.slice(0, 3).map((tag) => (
-                      <span key={tag}>{tag}</span>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-              <footer
-                className={layout === 'cards' ? 'recipe-card__actions' : 'recipe-list__actions'}
+        showCuisineGroups ? (
+          <div className="page-stack page-stack--compact">
+            {grouped.map((group) => (
+              <section
+                key={group.cuisine}
+                data-cuisine-group={group.cuisine}
+                aria-labelledby={`cuisine-${group.cuisine}`}
               >
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="recipe-card__favourite"
-                  onClick={() => toggleRecipeFavourite(recipe.id)}
-                  aria-label={
-                    recipe.favourite
-                      ? `Remove ${recipe.name} from household favourites`
-                      : `Add ${recipe.name} to household favourites`
-                  }
-                  aria-pressed={recipe.favourite}
-                  title={
-                    recipe.favourite ? 'Remove household favourite' : 'Add household favourite'
-                  }
-                >
-                  <Heart
-                    aria-hidden="true"
-                    size={18}
-                    fill={recipe.favourite ? 'currentColor' : 'none'}
-                  />
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => setEditing(recipe)}>
-                  <Pencil aria-hidden="true" size={16} /> Edit
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setPendingDelete(recipe)}
-                  aria-label={`Delete ${recipe.name}`}
-                  title="Delete recipe"
-                >
-                  <Trash2 aria-hidden="true" size={17} />
-                </Button>
-              </footer>
-            </Card>
-          ))}
-        </section>
+                <h2 id={`cuisine-${group.cuisine}`}>{CUISINE_LABELS[group.cuisine]}</h2>
+                <RecipeCollection
+                  recipes={group.recipes}
+                  layout={layout}
+                  onToggleFavourite={toggleRecipeFavourite}
+                  onEdit={setEditing}
+                  onDelete={setPendingDelete}
+                  grouped
+                />
+              </section>
+            ))}
+          </div>
+        ) : (
+          <RecipeCollection
+            recipes={filtered}
+            layout={layout}
+            onToggleFavourite={toggleRecipeFavourite}
+            onEdit={setEditing}
+            onDelete={setPendingDelete}
+          />
+        )
       ) : (
         <EmptyState
           icon={Search}

@@ -29,7 +29,7 @@ function cloneRecipes(recipes: Recipe[]) {
 function stateWith(recipes: Recipe[] = SEED_RECIPES): AppState {
   const weekStart = startOfWeek();
   return {
-    schemaVersion: 8,
+    schemaVersion: 9,
     recipes: cloneRecipes(recipes),
     plans: { [weekStart]: createEmptyPlan(weekStart, 4) },
     shoppingLists: {},
@@ -118,6 +118,39 @@ function buttonWithLabel(container: Element, label: string) {
   return button;
 }
 
+async function chooseRecipe(container: Element, day: string, recipe: Recipe) {
+  const trigger = container.querySelector<HTMLButtonElement>(
+    `button[aria-label$="dinner for ${day}"]`,
+  );
+  if (!trigger) throw new Error(`Could not find meal picker trigger for ${day}.`);
+  await click(trigger);
+  await click(pickerPathButton(container, 'Choose a meal'));
+  const card = Array.from(container.querySelectorAll<HTMLElement>('.meal-suggestion-card')).find(
+    (candidate) => candidate.querySelector('h3')?.textContent === recipe.name,
+  );
+  const choose = card?.querySelector<HTMLButtonElement>('button');
+  if (!choose) throw new Error(`Could not find ${recipe.name} in the meal picker.`);
+  await click(choose);
+}
+
+function pickerPathButton(container: Element, label: string) {
+  const strong = Array.from(
+    container.querySelectorAll<HTMLElement>('.meal-picker__paths strong'),
+  ).find((candidate) => candidate.textContent === label);
+  const button = strong?.closest('button');
+  if (!button) throw new Error(`Could not find meal picker path ${label}.`);
+  return button;
+}
+
+function optionButton(container: Element, label: string) {
+  const strong = Array.from(
+    container.querySelectorAll<HTMLElement>('.meal-picker__other-options strong'),
+  ).find((candidate) => candidate.textContent === label);
+  const button = strong?.closest('button');
+  if (!button) throw new Error(`Could not find dinner plan ${label}.`);
+  return button;
+}
+
 afterEach(async () => {
   if (!mounted) return;
   await act(async () => mounted?.root.unmount());
@@ -145,13 +178,7 @@ describe('PlanPage', () => {
       },
     ];
     const page = await renderPlan(initialState, { onOpenShopping });
-    const monday = page.container.querySelector<HTMLSelectElement>('#meal-monday');
-    expect(monday).not.toBeNull();
-
-    await act(async () => {
-      monday!.value = SEED_RECIPES[0].id;
-      monday!.dispatchEvent(new Event('change', { bubbles: true }));
-    });
+    await chooseRecipe(page.container, 'Monday', SEED_RECIPES[0]);
     expect(page.snapshot()?.plan.slots.monday.recipeId).toBe(SEED_RECIPES[0].id);
 
     await click(buttonNamed(page.container, 'Plan my week'));
@@ -196,7 +223,7 @@ describe('PlanPage', () => {
     };
     const page = await renderPlan(initialState);
 
-    expect(page.container.querySelector<HTMLSelectElement>('#meal-monday')?.disabled).toBe(true);
+    expect(page.container.querySelector<HTMLButtonElement>('#meal-monday')?.disabled).toBe(true);
     await click(buttonNamed(page.container, 'Plan my week'));
 
     expect(page.snapshot()!.plan.slots.monday).toMatchObject({
@@ -205,6 +232,72 @@ describe('PlanPage', () => {
       servings: 6,
     });
     expect(page.snapshot()!.plan.slots.tuesday.recipeId).not.toBeNull();
+  });
+
+  it('preserves an unlocked chosen meal and special plan while satisfying a cuisine intention', async () => {
+    const indianRecipe: Recipe = {
+      ...SEED_RECIPES[2],
+      id: 'indian-dinner',
+      name: 'Indian dinner',
+      cuisine: 'indian',
+    };
+    const initialState = stateWith([...SEED_RECIPES, indianRecipe]);
+    const plan = initialState.plans[startOfWeek()];
+    plan.slots.monday = {
+      ...plan.slots.monday,
+      recipeId: SEED_RECIPES[0].id,
+      locked: false,
+      servings: 6,
+    };
+    plan.slots.tuesday = { ...plan.slots.tuesday, cuisineIntent: 'indian' };
+    plan.slots.wednesday = { ...plan.slots.wednesday, kind: 'leftovers' };
+    const page = await renderPlan(initialState);
+
+    await click(buttonNamed(page.container, 'Plan my week'));
+
+    expect(page.snapshot()!.plan.slots.monday).toMatchObject({
+      recipeId: SEED_RECIPES[0].id,
+      locked: false,
+      servings: 6,
+    });
+    expect(page.snapshot()!.plan.slots.tuesday).toMatchObject({
+      recipeId: indianRecipe.id,
+      cuisineIntent: undefined,
+    });
+    expect(page.snapshot()!.plan.slots.wednesday.kind).toBe('leftovers');
+  });
+
+  it('keeps an unsatisfied cuisine visible and out of the shopping list', async () => {
+    const italianRecipe: Recipe = {
+      ...SEED_RECIPES[0],
+      id: 'italian-dinner',
+      cuisine: 'italian',
+    };
+    const initialState = stateWith([italianRecipe]);
+    const plan = initialState.plans[startOfWeek()];
+    plan.slots.tuesday = { ...plan.slots.tuesday, cuisineIntent: 'korean' };
+    for (const day of [
+      'monday',
+      'wednesday',
+      'thursday',
+      'friday',
+      'saturday',
+      'sunday',
+    ] as const) {
+      plan.slots[day] = { ...plan.slots[day], kind: 'skip' };
+    }
+    const page = await renderPlan(initialState);
+
+    await click(buttonNamed(page.container, 'Plan my week'));
+
+    expect(page.snapshot()!.plan.slots.tuesday).toMatchObject({
+      recipeId: null,
+      cuisineIntent: 'korean',
+    });
+    expect(page.container.textContent).toContain('No saved Korean meal matches yet.');
+
+    await click(buttonNamed(page.container, 'Ready to shop'));
+    expect(page.snapshot()!.shoppingItems).toEqual([]);
   });
 
   it('clears the current plan and its shopping list after confirmation', async () => {
@@ -256,18 +349,164 @@ describe('PlanPage', () => {
       '.plan-progress [role="progressbar"]',
     );
     const fill = progress?.querySelector<HTMLElement>('span');
-    const monday = page.container.querySelector<HTMLSelectElement>('#meal-monday');
 
     expect(progress?.getAttribute('aria-valuenow')).toBe('0');
     expect(fill?.style.transform).toBe('scaleX(0)');
 
-    await act(async () => {
-      monday!.value = SEED_RECIPES[0].id;
-      monday!.dispatchEvent(new Event('change', { bubbles: true }));
-    });
+    await chooseRecipe(page.container, 'Monday', SEED_RECIPES[0]);
 
     expect(progress?.getAttribute('aria-valuenow')).toBe('1');
     expect(fill?.style.transform).toBe(`scaleX(${1 / 7})`);
+  });
+
+  it('does not count an intention as decided and clears it when a recipe is chosen', async () => {
+    const initialState = stateWith();
+    initialState.plans[startOfWeek()].slots.monday = {
+      ...initialState.plans[startOfWeek()].slots.monday,
+      cuisineIntent: 'indian',
+    };
+    const page = await renderPlan(initialState);
+    const progress = page.container.querySelector<HTMLElement>(
+      '.plan-progress [role="progressbar"]',
+    );
+
+    expect(progress?.getAttribute('aria-valuenow')).toBe('0');
+
+    await chooseRecipe(page.container, 'Monday', SEED_RECIPES[0]);
+
+    expect(page.snapshot()?.plan.slots.monday.recipeId).toBe(SEED_RECIPES[0].id);
+    expect(page.snapshot()?.plan.slots.monday.cuisineIntent).toBeUndefined();
+    expect(progress?.getAttribute('aria-valuenow')).toBe('1');
+  });
+
+  it('persists an unresolved cuisine, restores focus, and clears it for a special plan', async () => {
+    const page = await renderPlan(stateWith());
+    const trigger = buttonWithLabel(page.container, 'Choose dinner for Monday');
+    trigger.focus();
+
+    await click(trigger);
+    await click(pickerPathButton(page.container, 'I feel like…'));
+    await click(buttonNamed(page.container, 'Indian'));
+
+    expect(page.snapshot()?.plan.slots.monday).toMatchObject({
+      kind: 'recipe',
+      recipeId: null,
+      cuisineIntent: 'indian',
+      locked: false,
+    });
+    expect(page.container.textContent).toContain('Indian · meal not chosen');
+
+    await click(buttonNamed(page.container, 'Done'));
+    expect(document.activeElement).toBe(trigger);
+
+    await click(trigger);
+    await click(optionButton(page.container, 'Leftovers'));
+
+    expect(page.snapshot()?.plan.slots.monday).toMatchObject({
+      kind: 'leftovers',
+      recipeId: null,
+    });
+    expect(page.snapshot()?.plan.slots.monday.cuisineIntent).toBeUndefined();
+  });
+
+  it('browses cuisines for a chosen meal without replacing it', async () => {
+    const initialState = stateWith();
+    const monday = initialState.plans[startOfWeek()].slots.monday;
+    initialState.plans[startOfWeek()].slots.monday = {
+      ...monday,
+      recipeId: SEED_RECIPES[0].id,
+      servings: 6,
+    };
+    const page = await renderPlan(initialState);
+    const trigger = buttonWithLabel(page.container, 'Change dinner for Monday');
+    trigger.focus();
+
+    await click(trigger);
+    await click(pickerPathButton(page.container, 'I feel like…'));
+    await click(buttonNamed(page.container, 'Thai'));
+    expect(page.container.textContent).toContain('Browsing does not change');
+    await click(buttonNamed(page.container, 'Done'));
+
+    expect(page.snapshot()?.plan.slots.monday).toEqual({
+      ...monday,
+      recipeId: SEED_RECIPES[0].id,
+      servings: 6,
+    });
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('does nothing when the active cuisine for a chosen meal is clicked again', async () => {
+    const indianRecipe: Recipe = {
+      ...SEED_RECIPES[0],
+      id: 'indian-dinner',
+      name: 'Indian dinner',
+      cuisine: 'indian',
+    };
+    const initialState = stateWith([indianRecipe]);
+    const plan = initialState.plans[startOfWeek()];
+    plan.slots.monday = { ...plan.slots.monday, recipeId: indianRecipe.id };
+    const originalUpdatedAt = plan.updatedAt;
+    const page = await renderPlan(initialState);
+
+    await click(buttonWithLabel(page.container, 'Change dinner for Monday'));
+    await click(pickerPathButton(page.container, 'I feel like…'));
+    const activeCuisine = buttonNamed(page.container, 'Indian');
+    expect(activeCuisine.getAttribute('aria-pressed')).toBe('true');
+    await click(activeCuisine);
+    await click(buttonNamed(page.container, 'Done'));
+
+    expect(page.snapshot()?.plan.slots.monday.recipeId).toBe(indianRecipe.id);
+    expect(page.snapshot()?.plan.slots.monday.cuisineIntent).toBeUndefined();
+    expect(page.snapshot()?.plan.updatedAt).toBe(originalUpdatedAt);
+  });
+
+  it('explicitly replaces a chosen meal with an unresolved cuisine preference', async () => {
+    const initialState = stateWith();
+    initialState.plans[startOfWeek()].slots.monday.recipeId = SEED_RECIPES[0].id;
+    const page = await renderPlan(initialState);
+    const trigger = buttonWithLabel(page.container, 'Change dinner for Monday');
+    trigger.focus();
+
+    await click(trigger);
+    await click(pickerPathButton(page.container, 'I feel like…'));
+    await click(buttonNamed(page.container, 'Thai'));
+    await click(buttonNamed(page.container, 'Replace with Thai preference'));
+
+    expect(page.snapshot()?.plan.slots.monday).toMatchObject({
+      kind: 'recipe',
+      recipeId: null,
+      cuisineIntent: 'thai',
+      locked: false,
+    });
+    expect(page.container.textContent).toContain('Thai · meal not chosen');
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('cycles through explainable inspiration without random reshuffling', async () => {
+    const recipes: Recipe[] = [
+      { ...SEED_RECIPES[0], id: 'alpha', name: 'Alpha dinner', favourite: true },
+      { ...SEED_RECIPES[1], id: 'beta', name: 'Beta dinner', favourite: false },
+      { ...SEED_RECIPES[2], id: 'gamma', name: 'Gamma dinner', favourite: false },
+    ];
+    const page = await renderPlan(stateWith(recipes));
+
+    await click(buttonWithLabel(page.container, 'Choose dinner for Monday'));
+    await click(pickerPathButton(page.container, 'Inspire me'));
+    const firstName = page.container.querySelector(
+      '.meal-picker__inspiration .meal-suggestion-card h3',
+    )?.textContent;
+
+    expect(firstName).toBeTruthy();
+    expect(
+      page.container.querySelector('.meal-suggestion-card__reasons')?.textContent,
+    ).toBeTruthy();
+
+    await click(buttonNamed(page.container, 'Show me another'));
+    const secondName = page.container.querySelector(
+      '.meal-picker__inspiration .meal-suggestion-card h3',
+    )?.textContent;
+
+    expect(secondName).not.toBe(firstName);
   });
 
   it('guides an empty library to Recipes without attempting generation', async () => {

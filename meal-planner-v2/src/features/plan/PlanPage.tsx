@@ -31,10 +31,13 @@ import {
   startOfWeek,
 } from '../../domain/date';
 import { canMakeAhead, COOK_ATTENTION_LABELS, MAKE_AHEAD_LABELS } from '../../domain/recipeEffort';
+import { rankMealSuggestions } from '../../domain/mealInspiration';
 import { MAX_MEAL_SERVINGS, MIN_MEAL_SERVINGS } from '../../domain/planner';
 import { evaluateStockOnlyPlan } from '../../domain/stockPlanning';
-import type { DayKey, MealSlotKind } from '../../domain/types';
-import { DAY_KEYS } from '../../domain/types';
+import type { DayKey } from '../../domain/types';
+import { CUISINE_LABELS, DAY_KEYS } from '../../domain/types';
+import { DINNER_PLAN_OPTIONS } from './dinnerPlans';
+import { MealPicker } from './MealPicker';
 import { WeatherDayInline, WeatherPlanControl } from '../weather/WeatherWeek';
 import { useWeatherWeek } from '../weather/useWeatherWeek';
 
@@ -48,27 +51,15 @@ const DAY_LABELS: Record<DayKey, string> = {
   sunday: 'Sun',
 };
 
-const SPECIAL_OPTIONS: {
-  value: Exclude<MealSlotKind, 'recipe'>;
-  label: string;
-  description: string;
-}[] = [
-  {
-    value: 'leftovers',
-    label: 'Leftovers',
-    description: 'Use what is already cooked · no ingredients added',
-  },
-  {
-    value: 'eat-out',
-    label: 'Eat out / takeaway',
-    description: 'Dinner is covered elsewhere · no ingredients added',
-  },
-  {
-    value: 'skip',
-    label: 'Skip dinner',
-    description: 'No evening meal planned',
-  },
-];
+const DAY_FULL_LABELS: Record<DayKey, string> = {
+  monday: 'Monday',
+  tuesday: 'Tuesday',
+  wednesday: 'Wednesday',
+  thursday: 'Thursday',
+  friday: 'Friday',
+  saturday: 'Saturday',
+  sunday: 'Sunday',
+};
 
 export function PlanPage({
   onOpenRecipes,
@@ -86,6 +77,7 @@ export function PlanPage({
     shoppingItems,
     goToWeek,
     setMeal,
+    setCuisineIntent,
     updateMealServings,
     toggleLock,
     generateWeek,
@@ -98,6 +90,8 @@ export function PlanPage({
   } = useApp();
   const [showStockOnly, setShowStockOnly] = useState(false);
   const [showClearPlan, setShowClearPlan] = useState(false);
+  const [pickerDay, setPickerDay] = useState<DayKey | null>(null);
+  const [rankingNow] = useState(() => new Date().toISOString());
 
   const recipesById = useMemo(
     () => new Map(state.recipes.map((recipe) => [recipe.id, recipe])),
@@ -110,6 +104,35 @@ export function PlanPage({
   const stockOnlyRecipes = stockOnlyPlan.recipeEvaluations;
   const eligibleStockOnly = stockOnlyRecipes.filter((evaluation) => evaluation.eligible);
   const ineligibleStockOnly = stockOnlyRecipes.filter((evaluation) => !evaluation.eligible);
+  const intentionResults = useMemo(
+    () =>
+      new Map(
+        DAY_KEYS.filter((day) => Boolean(currentPlan.slots[day].cuisineIntent)).map((day) => [
+          day,
+          rankMealSuggestions({
+            plan: currentPlan,
+            day,
+            recipes: state.recipes,
+            homeStockItems: state.homeStockItems,
+            now: rankingNow,
+          }),
+        ]),
+      ),
+    [currentPlan, rankingNow, state.homeStockItems, state.recipes],
+  );
+  const pickerInspiration = useMemo(
+    () =>
+      pickerDay
+        ? rankMealSuggestions({
+            plan: currentPlan,
+            day: pickerDay,
+            recipes: state.recipes,
+            homeStockItems: state.homeStockItems,
+            now: rankingNow,
+          })
+        : null,
+    [currentPlan, pickerDay, rankingNow, state.homeStockItems, state.recipes],
+  );
   const decidedCount = DAY_KEYS.filter((day) => {
     const slot = currentPlan.slots[day];
     return Boolean(slot.recipeId) || (slot.kind !== undefined && slot.kind !== 'recipe');
@@ -253,11 +276,12 @@ export function PlanPage({
               const slot = currentPlan.slots[day];
               const slotKind = slot.kind ?? 'recipe';
               const recipe = recipesById.get(slot.recipeId ?? '');
-              const special = SPECIAL_OPTIONS.find((option) => option.value === slotKind);
+              const special = DINNER_PLAN_OPTIONS.find((option) => option.value === slotKind);
+              const intentionResult = intentionResults.get(day);
               const date = dayDate(activeWeek, day);
               return (
                 <article
-                  className={`day-row ${recipe || special ? 'day-row--filled' : ''} ${slot.cookedAt ? 'day-row--cooked' : ''}`}
+                  className={`day-row ${recipe || special ? 'day-row--filled' : ''} ${slot.cuisineIntent ? 'day-row--intent' : ''} ${slot.cookedAt ? 'day-row--cooked' : ''}`}
                   key={day}
                 >
                   <div className="day-row__date">
@@ -273,42 +297,25 @@ export function PlanPage({
                   ) : null}
 
                   <div className="day-row__meal">
-                    <label className="sr-only" htmlFor={`meal-${day}`}>
-                      Dinner for {DAY_LABELS[day]}
-                    </label>
-                    <select
+                    <button
+                      type="button"
                       id={`meal-${day}`}
-                      className="meal-select"
-                      value={special ? `special:${special.value}` : (slot.recipeId ?? '')}
-                      onChange={(event) => {
-                        const selected = event.target.value;
-                        const specialChoice = SPECIAL_OPTIONS.find(
-                          (option) => `special:${option.value}` === selected,
-                        );
-                        if (specialChoice) setMeal(day, null, specialChoice.value);
-                        else setMeal(day, selected || null, 'recipe');
-                      }}
+                      className="meal-picker-trigger"
+                      onClick={() => setPickerDay(day)}
                       disabled={slot.locked}
+                      aria-label={`${recipe || special || slot.cuisineIntent ? 'Change' : 'Choose'} dinner for ${DAY_FULL_LABELS[day]}`}
                     >
-                      <option value="">Choose a dinner</option>
-                      <optgroup label="Other plans">
-                        {SPECIAL_OPTIONS.map((option) => (
-                          <option key={option.value} value={`special:${option.value}`}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </optgroup>
-                      <optgroup label="Recipes">
-                        {state.recipes
-                          .slice()
-                          .sort((left, right) => left.name.localeCompare(right.name))
-                          .map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.name}
-                            </option>
-                          ))}
-                      </optgroup>
-                    </select>
+                      <strong>
+                        {recipe
+                          ? recipe.name
+                          : special
+                            ? special.label
+                            : slot.cuisineIntent
+                              ? `${CUISINE_LABELS[slot.cuisineIntent]} · meal not chosen`
+                              : 'Choose a dinner'}
+                      </strong>
+                      <span>{slot.locked ? 'Unlock to change' : 'Open meal picker'}</span>
+                    </button>
                     {recipe ? (
                       <div className="meal-support">
                         <div className="meal-meta">
@@ -373,6 +380,15 @@ export function PlanPage({
                       </div>
                     ) : special ? (
                       <span className="meal-special">{special.description}</span>
+                    ) : slot.cuisineIntent ? (
+                      <span className="meal-intent">
+                        {intentionResult?.unavailableReason === 'no-cuisine-match'
+                          ? `No saved ${CUISINE_LABELS[slot.cuisineIntent]} meal matches yet. Browse or add a recipe.`
+                          : intentionResult?.unavailableReason ===
+                              'all-cuisine-matches-already-planned'
+                            ? `Every saved ${CUISINE_LABELS[slot.cuisineIntent]} meal is already planned. Choose a duplicate manually or add a recipe.`
+                            : 'Choose a matching meal now, or leave this preference for Plan my week.'}
+                      </span>
                     ) : (
                       <span className="meal-placeholder">
                         Leave open or choose from your recipes
@@ -470,6 +486,25 @@ export function PlanPage({
           </footer>
         ) : null}
       </Card>
+
+      {pickerDay && pickerInspiration ? (
+        <MealPicker
+          dayLabel={DAY_FULL_LABELS[pickerDay]}
+          recipes={state.recipes}
+          selectedRecipeId={currentPlan.slots[pickerDay].recipeId}
+          cuisineIntent={currentPlan.slots[pickerDay].cuisineIntent}
+          inspiration={pickerInspiration}
+          onChooseRecipe={(recipeId) => setMeal(pickerDay, recipeId, 'recipe')}
+          onSetCuisineIntent={(cuisine) => setCuisineIntent(pickerDay, cuisine)}
+          onChooseSpecial={(kind) => setMeal(pickerDay, null, kind)}
+          onClear={() => setMeal(pickerDay, null, 'recipe')}
+          onAddRecipe={() => {
+            setPickerDay(null);
+            onOpenRecipes();
+          }}
+          onClose={() => setPickerDay(null)}
+        />
+      ) : null}
 
       {showStockOnly ? (
         <Modal

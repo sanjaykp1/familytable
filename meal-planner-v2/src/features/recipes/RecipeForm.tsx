@@ -4,12 +4,14 @@ import { Button } from '../../components/ui/Button';
 import { COOK_ATTENTION_LABELS, MAKE_AHEAD_LABELS } from '../../domain/recipeEffort';
 import type {
   CookAttention,
+  CuisineId,
   Ingredient,
   IngredientCategory,
   MakeAhead,
   Recipe,
   Season,
 } from '../../domain/types';
+import { CUISINE_IDS, CUISINE_LABELS } from '../../domain/types';
 
 const SEASONS: Season[] = ['winter', 'spring', 'summer', 'autumn'];
 const CATEGORIES: { value: IngredientCategory; label: string }[] = [
@@ -41,6 +43,7 @@ export function RecipeForm({
 }) {
   const [name, setName] = useState(recipe?.name ?? '');
   const [description, setDescription] = useState(recipe?.description ?? '');
+  const [cuisine, setCuisine] = useState<CuisineId | ''>(recipe?.cuisine ?? '');
   const [servings, setServings] = useState(recipe?.servings ?? 4);
   const [prepMinutes, setPrepMinutes] = useState(recipe?.prepMinutes ?? 15);
   const [cookMinutes, setCookMinutes] = useState(recipe?.cookMinutes ?? 30);
@@ -70,6 +73,10 @@ export function RecipeForm({
       setError('Give this recipe a name.');
       return;
     }
+    if (!cuisine) {
+      setError('Choose a cuisine.');
+      return;
+    }
     if (!cleanIngredients.length) {
       setError('Add at least one ingredient.');
       return;
@@ -79,6 +86,7 @@ export function RecipeForm({
       id: recipe?.id ?? id('recipe'),
       name: name.trim(),
       description: description.trim(),
+      cuisine,
       servings: Math.max(1, servings),
       prepMinutes: Math.max(0, prepMinutes),
       cookMinutes: Math.max(0, cookMinutes),
@@ -117,6 +125,25 @@ export function RecipeForm({
             onChange={(event) => setDescription(event.target.value)}
             placeholder="Why this meal earns a place in the week"
           />
+        </label>
+        <label className="field field--wide">
+          <span>Cuisine</span>
+          <select
+            required
+            value={cuisine}
+            onChange={(event) => setCuisine(event.target.value as CuisineId | '')}
+          >
+            <option value="" disabled>
+              Choose a cuisine
+            </option>
+            {CUISINE_IDS.filter(
+              (cuisineId) => cuisineId !== 'uncategorised' || recipe?.cuisine === 'uncategorised',
+            ).map((cuisineId) => (
+              <option key={cuisineId} value={cuisineId}>
+                {CUISINE_LABELS[cuisineId]}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="field">
           <span>Servings</span>

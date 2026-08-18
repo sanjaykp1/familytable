@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppProvider } from '../../app/AppProvider';
 import { startOfWeek } from '../../domain/date';
 import { createEmptyPlan, SEED_RECIPES } from '../../domain/seed';
-import type { AppState } from '../../domain/types';
+import type { AppState, Recipe } from '../../domain/types';
 import type { MealPlannerRepository } from '../../repositories/mealPlannerRepository';
 import { RecipesPage } from './RecipesPage';
 
@@ -20,11 +20,11 @@ function repositoryFor(state: AppState): MealPlannerRepository {
   };
 }
 
-async function renderRecipes() {
+async function renderRecipes(recipes: Recipe[] = SEED_RECIPES) {
   const weekStart = startOfWeek();
   const state: AppState = {
-    schemaVersion: 8,
-    recipes: SEED_RECIPES.map((recipe) => ({
+    schemaVersion: 9,
+    recipes: recipes.map((recipe) => ({
       ...recipe,
       ingredients: recipe.ingredients.map((ingredient) => ({ ...ingredient })),
       seasons: [...recipe.seasons],
@@ -91,5 +91,62 @@ describe('RecipesPage', () => {
     expect(favourite).toBeDefined();
     await act(async () => favourite?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(favourite?.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('groups general browsing by cuisine, includes Uncategorised, and omits empty groups', async () => {
+    const recipes: Recipe[] = [
+      { ...SEED_RECIPES[0], id: 'indian-dinner', name: 'Indian dinner', cuisine: 'indian' },
+      { ...SEED_RECIPES[1], id: 'italian-dinner', name: 'Italian dinner', cuisine: 'italian' },
+      {
+        ...SEED_RECIPES[2],
+        id: 'migrated-dinner',
+        name: 'Migrated dinner',
+        cuisine: 'uncategorised',
+      },
+    ];
+
+    const container = await renderRecipes(recipes);
+    const groups = Array.from(container.querySelectorAll<HTMLElement>('[data-cuisine-group]'));
+
+    expect(groups.map((group) => group.dataset.cuisineGroup)).toEqual([
+      'indian',
+      'italian',
+      'uncategorised',
+    ]);
+    expect(groups.map((group) => group.querySelector('h2')?.textContent)).toEqual([
+      'Indian',
+      'Italian',
+      'Uncategorised',
+    ]);
+    expect(container.querySelector('[data-cuisine-group="japanese"]')).toBeNull();
+    expect(container.textContent).toContain('Migrated dinner');
+  });
+
+  it('filters recipes by cuisine', async () => {
+    const recipes: Recipe[] = [
+      { ...SEED_RECIPES[0], id: 'indian-dinner', name: 'Indian dinner', cuisine: 'indian' },
+      { ...SEED_RECIPES[1], id: 'italian-dinner', name: 'Italian dinner', cuisine: 'italian' },
+      {
+        ...SEED_RECIPES[2],
+        id: 'migrated-dinner',
+        name: 'Migrated dinner',
+        cuisine: 'uncategorised',
+      },
+    ];
+    const container = await renderRecipes(recipes);
+    const cuisineFilter = Array.from(container.querySelectorAll('button')).find(
+      (control) => control.textContent?.trim() === 'Italian',
+    );
+    if (!cuisineFilter) throw new Error('Could not find cuisine filter.');
+
+    await act(async () =>
+      cuisineFilter.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    );
+
+    expect(container.textContent).toContain('Italian dinner');
+    expect(container.textContent).not.toContain('Indian dinner');
+    expect(container.textContent).not.toContain('Migrated dinner');
+    expect(container.textContent).toContain('1 recipe');
+    expect(cuisineFilter.getAttribute('aria-pressed')).toBe('true');
   });
 });

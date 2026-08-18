@@ -11,16 +11,19 @@ import {
 import { startOfWeek, toISODateLocal } from '../domain/date';
 import { needsBackupReminder } from '../domain/backup';
 import { RepositoryError } from '../domain/errors';
-import { generateMealPlan, replaceMeal, setMealServings } from '../domain/planner';
+import { generateInspiredMealPlan } from '../domain/mealInspiration';
+import { replaceMeal, setMealServings } from '../domain/planner';
 import { createEmptyPlan, createInitialState } from '../domain/seed';
 import {
   acceptReplenishmentSuggestion as addAcceptedReplenishmentToList,
   buildReplenishmentSuggestions,
   buildShoppingList,
+  invalidateRecipeShoppingContributions,
 } from '../domain/shopping';
 import { generateStockOnlyMealPlan, type StockOnlyPlanResult } from '../domain/stockPlanning';
 import type {
   AppState,
+  CuisineIntentId,
   DayKey,
   HomeStockItem,
   MealPlan,
@@ -52,6 +55,7 @@ interface AppContextValue {
   toasts: ToastMessage[];
   goToWeek: (weekStart: string) => void;
   setMeal: (day: DayKey, recipeId: string | null, kind?: MealSlotKind) => void;
+  setCuisineIntent: (day: DayKey, cuisineIntent: CuisineIntentId | null) => void;
   updateMealServings: (day: DayKey, servings: number) => void;
   toggleLock: (day: DayKey) => void;
   generateWeek: () => void;
@@ -137,9 +141,15 @@ function resetReplenishmentCycle(
   return { ...next, replenishmentSuggestionStatus: undefined };
 }
 
-function retainIndependentShoppingItems(items: ShoppingItem[] | undefined): ShoppingItem[] {
-  return (items ?? []).filter(
-    (item) => item.sources.includes('manual') || item.sources.includes('stock-top-up'),
+function invalidateRecipeShoppingLists(
+  shoppingLists: AppState['shoppingLists'],
+  recipeIds?: readonly string[],
+): AppState['shoppingLists'] {
+  return Object.fromEntries(
+    Object.entries(shoppingLists).flatMap(([weekStart, items]) => {
+      const retainedItems = invalidateRecipeShoppingContributions(items, recipeIds);
+      return retainedItems.length ? [[weekStart, retainedItems]] : [];
+    }),
   );
 }
 
@@ -238,7 +248,7 @@ export function AppProvider({
           createEmptyPlan(activeWeek, current.preferences.defaultServings);
         const nextPlan = updater(plan, current);
         const nextShopping = { ...current.shoppingLists };
-        const retainedItems = retainIndependentShoppingItems(nextShopping[activeWeek]);
+        const retainedItems = invalidateRecipeShoppingContributions(nextShopping[activeWeek]);
         if (retainedItems.length) nextShopping[activeWeek] = retainedItems;
         else delete nextShopping[activeWeek];
         return {
@@ -261,7 +271,31 @@ export function AppProvider({
             ...plan.slots[day],
             kind,
             recipeId: kind === 'recipe' ? recipeId : null,
+            cuisineIntent: undefined,
             locked: kind === 'recipe' && recipeId ? plan.slots[day].locked : false,
+            cookedAt: undefined,
+            lastCookedAtBeforeCooking: undefined,
+          },
+        },
+        status: 'draft',
+        updatedAt: new Date().toISOString(),
+      }));
+    },
+    [updateActivePlan],
+  );
+
+  const setCuisineIntent = useCallback(
+    (day: DayKey, cuisineIntent: CuisineIntentId | null) => {
+      updateActivePlan((plan) => ({
+        ...plan,
+        slots: {
+          ...plan.slots,
+          [day]: {
+            ...plan.slots[day],
+            kind: 'recipe',
+            recipeId: null,
+            cuisineIntent: cuisineIntent ?? undefined,
+            locked: false,
             cookedAt: undefined,
             lastCookedAtBeforeCooking: undefined,
           },
@@ -299,9 +333,20 @@ export function AppProvider({
       notify('Add a recipe before generating a week.', 'error');
       return;
     }
-    updateActivePlan((plan, current) => generateMealPlan(plan, current.recipes));
-    notify('Your week has been planned.', 'success');
-  }, [notify, state.recipes.length, updateActivePlan]);
+    const result = generateInspiredMealPlan(
+      currentPlan,
+      state.recipes,
+      state.homeStockItems,
+      new Date().toISOString(),
+    );
+    updateActivePlan(() => result.plan);
+    notify(
+      result.unresolvedIntentions.length
+        ? `${result.unresolvedIntentions.length} cuisine preference${result.unresolvedIntentions.length === 1 ? '' : 's'} still need a matching saved recipe.`
+        : 'Your week has been planned.',
+      result.unresolvedIntentions.length ? 'info' : 'success',
+    );
+  }, [currentPlan, notify, state.homeStockItems, state.recipes, updateActivePlan]);
 
   const planFromStock = useCallback(
     (constrainedStockItemIds: string[] = []) => {
@@ -327,7 +372,7 @@ export function AppProvider({
 
       setState((current) => {
         const nextShopping = { ...current.shoppingLists };
-        const retainedItems = retainIndependentShoppingItems(nextShopping[activeWeek]);
+        const retainedItems = invalidateRecipeShoppingContributions(nextShopping[activeWeek]);
         if (retainedItems.length) nextShopping[activeWeek] = retainedItems;
         else delete nextShopping[activeWeek];
         return {
@@ -455,7 +500,9 @@ export function AppProvider({
   const clearMealPlan = useCallback(() => {
     setState((current) => {
       const nextShopping = { ...current.shoppingLists };
-      delete nextShopping[activeWeek];
+      const retainedItems = invalidateRecipeShoppingContributions(nextShopping[activeWeek]);
+      if (retainedItems.length) nextShopping[activeWeek] = retainedItems;
+      else delete nextShopping[activeWeek];
       return {
         ...current,
         plans: {
@@ -477,7 +524,9 @@ export function AppProvider({
           recipes: exists
             ? current.recipes.map((item) => (item.id === recipe.id ? recipe : item))
             : [recipe, ...current.recipes],
-          shoppingLists: {},
+          shoppingLists: exists
+            ? invalidateRecipeShoppingLists(current.shoppingLists, [recipe.id])
+            : current.shoppingLists,
         };
       });
       notify('Recipe saved.', 'success');
@@ -523,7 +572,10 @@ export function AppProvider({
                         ...plan.slots[day],
                         kind: 'recipe' as const,
                         recipeId: null,
+                        cuisineIntent: undefined,
                         locked: false,
+                        cookedAt: undefined,
+                        lastCookedAtBeforeCooking: undefined,
                       }
                     : plan.slots[day],
                 ]),
@@ -535,7 +587,7 @@ export function AppProvider({
           ...current,
           recipes: current.recipes.filter((recipe) => recipe.id !== recipeId),
           plans,
-          shoppingLists: {},
+          shoppingLists: invalidateRecipeShoppingLists(current.shoppingLists, [recipeId]),
         };
       });
       notify('Recipe deleted.', 'info');
@@ -832,9 +884,7 @@ export function AppProvider({
 
   const exportData = useCallback(
     (lastBackupAt?: string) =>
-      activeRepository.exportData(
-        lastBackupAt === undefined ? state : { ...state, lastBackupAt },
-      ),
+      activeRepository.exportData(lastBackupAt === undefined ? state : { ...state, lastBackupAt }),
     [activeRepository, state],
   );
 
@@ -846,8 +896,7 @@ export function AppProvider({
     setBackupReminderDismissed(true);
   }, []);
 
-  const backupReminderNeeded =
-    !backupReminderDismissed && needsBackupReminder(state.lastBackupAt);
+  const backupReminderNeeded = !backupReminderDismissed && needsBackupReminder(state.lastBackupAt);
 
   const importData = useCallback(
     (serialized: string) => {
@@ -888,6 +937,7 @@ export function AppProvider({
       toasts,
       goToWeek,
       setMeal,
+      setCuisineIntent,
       updateMealServings,
       toggleLock,
       generateWeek,
@@ -955,6 +1005,7 @@ export function AppProvider({
       resolveShoppingReview,
       restoreHomeStockItem,
       setMeal,
+      setCuisineIntent,
       updateMealServings,
       shoppingItems,
       state,

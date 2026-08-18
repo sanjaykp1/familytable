@@ -21,7 +21,7 @@ function stateWith(stock: HomeStockItem[] = []): AppState {
   const plan = createEmptyPlan(weekStart, 4);
   plan.slots.monday = { ...plan.slots.monday, recipeId: 'seed-salmon' };
   return {
-    schemaVersion: 8,
+    schemaVersion: 9,
     recipes: SEED_RECIPES.map((recipe) => ({
       ...recipe,
       ingredients: recipe.ingredients.map((ingredient) => ({ ...ingredient })),

@@ -165,6 +165,15 @@ function resolveName(name: string, registry: IngredientAliasRegistry): NameResol
   return { normalized, canonical: literal, candidates: [literal], ambiguous: false };
 }
 
+/** Returns a stable explicit-alias identity for explainable ranking and matching helpers. */
+export function canonicalIngredientKey(
+  name: string,
+  registry: IngredientAliasRegistry = DEFAULT_INGREDIENT_ALIAS_REGISTRY,
+): string | null {
+  const resolution = resolveName(name, registry);
+  return resolution.ambiguous ? null : resolution.canonical?.id ?? null;
+}
+
 function describeUnit(unit: string): UnitDescriptor {
   const normalized = normalizeIngredientText(unit);
   if (normalized === 'g') return { normalized, family: 'mass', baseFactor: 1 };

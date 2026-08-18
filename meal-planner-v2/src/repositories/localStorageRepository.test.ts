@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { RepositoryError } from '../domain/errors';
-import { createInitialState } from '../domain/seed';
+import {
+  BUNDLED_RECIPE_CUISINES,
+  CATALOGUE_EXPANSION_RECIPES,
+  createInitialState,
+  SEED_RECIPES,
+} from '../domain/seed';
 import type { AppState } from '../domain/types';
 import {
   LocalStorageMealPlannerRepository,
@@ -278,7 +283,7 @@ describe('LocalStorageMealPlannerRepository', () => {
 
     const restored = repository.importData(JSON.stringify(legacy));
 
-    expect(restored.schemaVersion).toBe(8);
+    expect(restored.schemaVersion).toBe(9);
     expect(restored.recipes[0].cookAttention).toBe('mostly-hands-off');
     expect(restored.recipes[0].makeAhead).toBe('prep-ahead');
     expect(restored.preferences.weatherLocation).toBeNull();
@@ -310,7 +315,7 @@ describe('LocalStorageMealPlannerRepository', () => {
 
     const restored = repository.importData(JSON.stringify(legacy));
 
-    expect(restored.schemaVersion).toBe(8);
+    expect(restored.schemaVersion).toBe(9);
     expect(restored.recipes).toEqual(current.recipes);
     expect(restored.plans).toEqual(current.plans);
     expect(restored.preferences).toEqual(legacy.preferences);
@@ -351,7 +356,7 @@ describe('LocalStorageMealPlannerRepository', () => {
 
     const restored = repository.importData(JSON.stringify(legacy));
 
-    expect(restored.schemaVersion).toBe(8);
+    expect(restored.schemaVersion).toBe(9);
     expect(restored.homeStockItems).toEqual([
       expect.objectContaining({
         id: 'stock-frozen-peas',
@@ -379,6 +384,176 @@ describe('LocalStorageMealPlannerRepository', () => {
     expect(reloaded.recipes.filter((recipe) => recipe.id === 'catalogue-miso-salmon')).toHaveLength(1);
   });
 
+  it('migrates only explicitly mapped bundled recipe IDs to their controlled cuisines', () => {
+    const repository = new LocalStorageMealPlannerRepository(new MemoryStorage());
+    const current = createInitialState();
+    const householdRecipe: Record<string, unknown> = {
+      ...current.recipes.find((recipe) => recipe.id === 'catalogue-indian-dahl'),
+      id: 'household-indian-dahl',
+      name: 'Household Indian dahl',
+    };
+    const bundledRecipe: Record<string, unknown> = {
+      ...current.recipes.find((recipe) => recipe.id === 'catalogue-indian-dahl'),
+    };
+    delete householdRecipe.cuisine;
+    delete bundledRecipe.cuisine;
+    const legacy = {
+      ...current,
+      schemaVersion: 8,
+      recipes: [householdRecipe, bundledRecipe],
+    };
+
+    const restored = repository.importData(JSON.stringify(legacy));
+
+    expect(restored.schemaVersion).toBe(9);
+    expect(restored.recipes.find((recipe) => recipe.id === 'household-indian-dahl')?.cuisine).toBe(
+      'uncategorised',
+    );
+    expect(restored.recipes.find((recipe) => recipe.id === 'catalogue-indian-dahl')?.cuisine).toBe(
+      'indian',
+    );
+  });
+
+  it('keeps the explicit bundled cuisine map exhaustive for the shipped catalogue', () => {
+    const bundledIds = [...SEED_RECIPES, ...CATALOGUE_EXPANSION_RECIPES]
+      .map((recipe) => recipe.id)
+      .sort();
+
+    expect(Object.keys(BUNDLED_RECIPE_CUISINES).sort()).toEqual(bundledIds);
+    expect(createInitialState().recipes).toEqual(
+      expect.arrayContaining(
+        bundledIds.map((id) =>
+          expect.objectContaining({ id, cuisine: BUNDLED_RECIPE_CUISINES[id] }),
+        ),
+      ),
+    );
+  });
+
+  it('rejects current-schema recipes with a missing or unknown cuisine', () => {
+    const repository = new LocalStorageMealPlannerRepository(new MemoryStorage());
+    const missingCuisine = createInitialState();
+    const missingRecipe: Record<string, unknown> = { ...missingCuisine.recipes[0] };
+    delete missingRecipe.cuisine;
+    const unknownCuisine = createInitialState();
+
+    expect(() =>
+      repository.importData(
+        JSON.stringify({
+          ...missingCuisine,
+          recipes: [missingRecipe, ...missingCuisine.recipes.slice(1)],
+        }),
+      ),
+    ).toThrow('invalid a recipe cuisine');
+    expect(() =>
+      repository.importData(
+        JSON.stringify({
+          ...unknownCuisine,
+          recipes: [
+            { ...unknownCuisine.recipes[0], cuisine: 'asian' },
+            ...unknownCuisine.recipes.slice(1),
+          ],
+        }),
+      ),
+    ).toThrow('invalid a recipe cuisine');
+  });
+
+  it('round-trips an edited household recipe after migration to Uncategorised', () => {
+    const repository = new LocalStorageMealPlannerRepository(new MemoryStorage());
+    const current = createInitialState();
+    const householdRecipe: Record<string, unknown> = {
+      ...current.recipes[0],
+      id: 'household-supper',
+      name: 'Household supper',
+    };
+    delete householdRecipe.cuisine;
+    const migrated = repository.importData(
+      JSON.stringify({ ...current, schemaVersion: 8, recipes: [householdRecipe] }),
+    );
+    const edited = {
+      ...migrated,
+      recipes: migrated.recipes.map((recipe) =>
+        recipe.id === 'household-supper' ? { ...recipe, name: 'Edited household supper' } : recipe,
+      ),
+    };
+
+    const restored = repository.importData(repository.exportData(edited));
+
+    expect(restored.recipes).toContainEqual(
+      expect.objectContaining({
+        id: 'household-supper',
+        name: 'Edited household supper',
+        cuisine: 'uncategorised',
+      }),
+    );
+  });
+
+  it('round-trips a valid unresolved cuisine intention', () => {
+    const repository = new LocalStorageMealPlannerRepository(new MemoryStorage());
+    const state = createInitialState();
+    const weekStart = Object.keys(state.plans)[0];
+    state.plans[weekStart].slots.tuesday = {
+      ...state.plans[weekStart].slots.tuesday,
+      cuisineIntent: 'indian',
+    };
+
+    const restored = repository.importData(repository.exportData(state));
+
+    expect(restored.plans[weekStart].slots.tuesday).toMatchObject({
+      recipeId: null,
+      kind: 'recipe',
+      cuisineIntent: 'indian',
+      locked: false,
+    });
+  });
+
+  it('rejects unknown and Uncategorised day intentions in the current schema', () => {
+    const repository = new LocalStorageMealPlannerRepository(new MemoryStorage());
+    const state = createInitialState();
+    const weekStart = Object.keys(state.plans)[0];
+
+    for (const cuisineIntent of ['asian', 'uncategorised']) {
+      const invalidState = structuredClone(state) as unknown as Record<string, unknown>;
+      const plans = invalidState.plans as Record<string, { slots: Record<string, unknown> }>;
+      plans[weekStart].slots.tuesday = {
+        ...(plans[weekStart].slots.tuesday as Record<string, unknown>),
+        cuisineIntent,
+      };
+
+      expect(() => repository.importData(JSON.stringify(invalidState))).toThrow(
+        'invalid a meal slot cuisine intention',
+      );
+    }
+  });
+
+  it('normalizes cuisine intentions away from chosen and special meals', () => {
+    const repository = new LocalStorageMealPlannerRepository(new MemoryStorage());
+    const state = createInitialState();
+    const weekStart = Object.keys(state.plans)[0];
+    state.plans[weekStart].slots.monday = {
+      ...state.plans[weekStart].slots.monday,
+      recipeId: state.recipes[0].id,
+      cuisineIntent: 'nordic',
+    };
+    state.plans[weekStart].slots.tuesday = {
+      ...state.plans[weekStart].slots.tuesday,
+      kind: 'leftovers',
+      cuisineIntent: 'indian',
+      locked: true,
+      cookedAt: '2026-08-17',
+    };
+
+    const restored = repository.importData(JSON.stringify(state));
+
+    expect(restored.plans[weekStart].slots.monday).not.toHaveProperty('cuisineIntent');
+    expect(restored.plans[weekStart].slots.tuesday).toMatchObject({
+      kind: 'leftovers',
+      recipeId: null,
+      locked: false,
+    });
+    expect(restored.plans[weekStart].slots.tuesday).not.toHaveProperty('cuisineIntent');
+    expect(restored.plans[weekStart].slots.tuesday).not.toHaveProperty('cookedAt');
+  });
+
   it('migrates earlier data with no backup timestamp without losing saved household data', () => {
     const repository = new LocalStorageMealPlannerRepository(new MemoryStorage());
     const current = createInitialState();
@@ -387,7 +562,7 @@ describe('LocalStorageMealPlannerRepository', () => {
 
     const restored = repository.importData(JSON.stringify(legacy));
 
-    expect(restored.schemaVersion).toBe(8);
+    expect(restored.schemaVersion).toBe(9);
     expect(restored.lastBackupAt).toBeNull();
     expect(restored.homeStockItems).toEqual(current.homeStockItems);
     expect(restored.recipes).toEqual(current.recipes);
