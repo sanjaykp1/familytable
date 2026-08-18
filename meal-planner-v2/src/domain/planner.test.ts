@@ -44,6 +44,16 @@ describe('generateMealPlan', () => {
     expect(generated.slots.friday.kind).toBe('eat-out');
     expect(generated.slots.monday.recipeId).not.toBeNull();
   });
+
+  it('leaves an unresolved cuisine intention open instead of silently substituting a meal', () => {
+    const plan = createEmptyPlan('2026-08-17', 4);
+    plan.slots.tuesday = { ...plan.slots.tuesday, cuisineIntent: 'indian' };
+
+    const generated = generateMealPlan(plan, SEED_RECIPES, () => 0);
+
+    expect(generated.slots.tuesday).toEqual(plan.slots.tuesday);
+    expect(generated.slots.monday.recipeId).not.toBeNull();
+  });
 });
 
 describe('replaceMeal', () => {

@@ -1,8 +1,37 @@
 import { startOfWeek } from './date';
-import type { AppState, Ingredient, MealPlan, Recipe } from './types';
+import type { AppState, CuisineId, Ingredient, MealPlan, Recipe } from './types';
 import { DAY_KEYS } from './types';
 
 const now = '2026-01-01T12:00:00.000Z';
+
+export const BUNDLED_RECIPE_CUISINES: Readonly<Record<string, CuisineId>> = {
+  'seed-salmon': 'nordic',
+  'seed-pizza': 'italian',
+  'seed-chicken': 'british-irish',
+  'seed-stirfry': 'chinese',
+  'seed-tacos': 'mexican',
+  'seed-chilli': 'american',
+  'seed-risotto': 'italian',
+  'seed-traybake': 'british-irish',
+  'catalogue-chicken-curry-green-beans': 'indian',
+  'catalogue-chicken-udon-wok': 'japanese',
+  'catalogue-indian-dahl': 'indian',
+  'catalogue-indian-chana-masala': 'indian',
+  'catalogue-chicken-fajitas': 'mexican',
+  'catalogue-miso-salmon': 'japanese',
+  'catalogue-lentil-sweet-potato-curry': 'indian',
+  'catalogue-tuna-pea-wholewheat-pasta': 'italian',
+  'catalogue-tofu-edamame-rice-bowls': 'japanese',
+  'catalogue-cod-white-bean-tomato-bake': 'mediterranean',
+  'catalogue-lentil-bolognese': 'italian',
+  'catalogue-mediterranean-white-bean-traybake': 'mediterranean',
+};
+
+function withBundledCuisine(recipe: Omit<Recipe, 'cuisine'>): Recipe {
+  const cuisine = BUNDLED_RECIPE_CUISINES[recipe.id];
+  if (!cuisine) throw new Error(`Bundled recipe ${recipe.id} has no cuisine mapping.`);
+  return { ...recipe, cuisine };
+}
 
 function ingredient(
   id: string,
@@ -14,7 +43,7 @@ function ingredient(
   return { id, name, quantity, unit, category };
 }
 
-export const SEED_RECIPES: Recipe[] = [
+const SEED_RECIPE_DEFINITIONS: Omit<Recipe, 'cuisine'>[] = [
   {
     id: 'seed-salmon',
     name: 'Lemon salmon & new potatoes',
@@ -217,12 +246,14 @@ export const SEED_RECIPES: Recipe[] = [
   },
 ];
 
+export const SEED_RECIPES: Recipe[] = SEED_RECIPE_DEFINITIONS.map(withBundledCuisine);
+
 /**
  * A one-time, additive catalogue expansion. These recipes are kept separate from the original
  * starter set so an existing household can receive them on schema migration without changing its
  * own recipes, plans, or later deletions.
  */
-export const CATALOGUE_EXPANSION_RECIPES: Recipe[] = [
+const CATALOGUE_EXPANSION_RECIPE_DEFINITIONS: Omit<Recipe, 'cuisine'>[] = [
   {
     id: 'catalogue-chicken-curry-green-beans',
     name: 'Chicken curry with green beans',
@@ -571,6 +602,9 @@ export const CATALOGUE_EXPANSION_RECIPES: Recipe[] = [
   },
 ];
 
+export const CATALOGUE_EXPANSION_RECIPES: Recipe[] =
+  CATALOGUE_EXPANSION_RECIPE_DEFINITIONS.map(withBundledCuisine);
+
 export function createEmptyPlan(weekStart: string, servings: number): MealPlan {
   const slots = Object.fromEntries(
     DAY_KEYS.map((day) => [day, { recipeId: null, kind: 'recipe', locked: false, servings }]),
@@ -589,7 +623,7 @@ export function createInitialState(): AppState {
   const currentWeek = startOfWeek();
   const defaultServings = 4;
   return {
-    schemaVersion: 8,
+    schemaVersion: 9,
     recipes: [...SEED_RECIPES, ...CATALOGUE_EXPANSION_RECIPES].map((recipe) => ({
       ...recipe,
       ingredients: recipe.ingredients.map((item) => ({ ...item })),

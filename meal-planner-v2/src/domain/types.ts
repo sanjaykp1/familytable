@@ -19,6 +19,68 @@ export type HomeStockKind = 'food' | 'household';
 export type HomeStockPlanningPriority = 'normal' | 'use-soon';
 export type ShoppingItemSource = 'recipe' | 'manual' | 'stock-top-up';
 export type ReplenishmentSuggestionStatus = 'dismissed' | 'accepted';
+export const CUISINE_INTENT_IDS = [
+  'indian',
+  'chinese',
+  'japanese',
+  'korean',
+  'thai',
+  'vietnamese',
+  'italian',
+  'mexican',
+  'latin-american',
+  'mediterranean',
+  'middle-eastern',
+  'nordic',
+  'british-irish',
+  'american',
+  'other',
+] as const;
+export type CuisineIntentId = (typeof CUISINE_INTENT_IDS)[number];
+
+export const CUISINE_IDS = [...CUISINE_INTENT_IDS, 'uncategorised'] as const;
+export type CuisineId = (typeof CUISINE_IDS)[number];
+
+export const CUISINE_LABELS: Record<CuisineId, string> = {
+  indian: 'Indian',
+  chinese: 'Chinese',
+  japanese: 'Japanese',
+  korean: 'Korean',
+  thai: 'Thai',
+  vietnamese: 'Vietnamese',
+  italian: 'Italian',
+  mexican: 'Mexican',
+  'latin-american': 'Latin American',
+  mediterranean: 'Mediterranean',
+  'middle-eastern': 'Middle Eastern',
+  nordic: 'Nordic',
+  'british-irish': 'British & Irish',
+  american: 'American',
+  other: 'Other',
+  uncategorised: 'Uncategorised',
+};
+
+export const MEAL_SUGGESTION_REASON_CODES = [
+  'favourite',
+  'good-for-weeknight',
+  'good-for-weekend',
+  'in-season',
+  'use-soon',
+  'not-cooked-recently',
+  'only-cuisine-match',
+  'recently-cooked-only-match',
+  'already-planned-manual-option',
+] as const;
+export type MealSuggestionReasonCode = (typeof MEAL_SUGGESTION_REASON_CODES)[number];
+
+export const MEAL_SUGGESTION_UNAVAILABLE_REASON_CODES = [
+  'no-saved-recipes',
+  'no-cuisine-match',
+  'all-cuisine-matches-already-planned',
+  'all-recipes-already-planned',
+] as const;
+export type MealSuggestionUnavailableReasonCode =
+  (typeof MEAL_SUGGESTION_UNAVAILABLE_REASON_CODES)[number];
 export type IngredientCategory =
   'produce' | 'protein' | 'dairy' | 'bakery' | 'pantry' | 'frozen' | 'other';
 
@@ -34,6 +96,8 @@ export interface Recipe {
   id: string;
   name: string;
   description: string;
+  /** Required in persisted schema 9; optional only until the Slice 1 recipe form lands. */
+  cuisine: CuisineId;
   servings: number;
   prepMinutes: number;
   cookMinutes: number;
@@ -53,6 +117,8 @@ export interface Recipe {
 export interface MealSlot {
   recipeId: string | null;
   kind?: MealSlotKind;
+  /** A still-unresolved cuisine choice for this day; never valid with a chosen or special meal. */
+  cuisineIntent?: CuisineIntentId;
   locked: boolean;
   servings: number;
   /** A local record that this specific planned dinner was cooked. */
@@ -122,7 +188,8 @@ export interface WeatherLocation {
 }
 
 export interface AppState {
-  schemaVersion: 8;
+  /** Repositories migrate supported older documents and always return version 9. */
+  schemaVersion: 9;
   recipes: Recipe[];
   plans: Record<string, MealPlan>;
   shoppingLists: Record<string, ShoppingItem[]>;

@@ -49,6 +49,9 @@ export function generateMealPlan(
   for (const day of DAY_KEYS) {
     const slot = plan.slots[day];
     if (slot.kind && slot.kind !== 'recipe') continue;
+    // Constrained generation resolves this later. For now, an explicit intention stays visible
+    // instead of receiving a recipe from a different cuisine.
+    if (slot.cuisineIntent && !slot.recipeId) continue;
     if (slot.locked && slot.recipeId) continue;
     const unused = recipes.filter((recipe) => !used.has(recipe.id));
     const candidates = unused.length ? unused : recipes;
@@ -57,6 +60,7 @@ export function generateMealPlan(
       ...slot,
       kind: 'recipe',
       recipeId: picked?.id ?? null,
+      cuisineIntent: undefined,
       cookedAt: undefined,
       lastCookedAtBeforeCooking: undefined,
     };
@@ -96,6 +100,7 @@ export function replaceMeal(
         ...plan.slots[day],
         kind: 'recipe',
         recipeId: picked?.id ?? currentId,
+        cuisineIntent: undefined,
         cookedAt: undefined,
         lastCookedAtBeforeCooking: undefined,
       },

@@ -357,8 +357,14 @@ h3 {
 }
 
 .page-stack {
+  width: 100%;
+  min-width: 0;
   display: grid;
   gap: var(--space-5);
+}
+
+.page-stack > * {
+  min-width: 0;
 }
 
 .page-header {
@@ -817,6 +823,46 @@ h3 {
   opacity: 1;
 }
 
+.meal-picker-trigger {
+  width: 100%;
+  min-height: var(--control-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: color-mix(in srgb, var(--colour-surface) 64%, var(--colour-surface-inset));
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--colour-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.meal-picker-trigger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--colour-border) 58%, transparent);
+}
+
+.meal-picker-trigger:disabled {
+  cursor: default;
+}
+
+.meal-picker-trigger strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--font-size-control);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meal-picker-trigger span {
+  flex: 0 0 auto;
+  color: var(--colour-text-faint);
+  font-size: var(--font-size-label);
+  font-weight: 620;
+}
+
 .meal-meta {
   display: flex;
   flex-wrap: wrap;
@@ -878,7 +924,8 @@ h3 {
 }
 
 .meal-placeholder,
-.meal-special {
+.meal-special,
+.meal-intent {
   display: block;
   margin-top: 0.35rem;
   color: var(--colour-text-faint);
@@ -888,6 +935,15 @@ h3 {
 .meal-special {
   color: var(--colour-sage);
   font-weight: 650;
+}
+
+.meal-intent {
+  color: var(--colour-primary);
+  font-weight: 650;
+}
+
+.day-row--intent {
+  background: color-mix(in srgb, var(--colour-primary-soft) 48%, transparent);
 }
 
 .day-row__actions,
@@ -1230,6 +1286,31 @@ h3 {
   color: var(--colour-primary);
 }
 
+.cuisine-chips {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.cuisine-chips button {
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  background: transparent;
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-pill);
+  color: var(--colour-text-soft);
+  cursor: pointer;
+  font-size: var(--font-size-label);
+  font-weight: 650;
+}
+
+.cuisine-chips button.is-active {
+  background: var(--colour-primary-soft);
+  border-color: color-mix(in srgb, var(--colour-primary) 40%, var(--colour-border));
+  color: var(--colour-primary);
+}
+
 .search-field {
   width: min(32rem, 100%);
   min-height: calc(var(--control-height) + var(--space-1));
@@ -1310,7 +1391,8 @@ h3 {
   color: var(--colour-primary);
 }
 
-.recipe-card h2 {
+.recipe-card h2,
+.recipe-card h3 {
   margin-bottom: var(--space-2);
   font-family: var(--font-display);
   font-size: 1.28rem;
@@ -1501,6 +1583,191 @@ h3 {
   margin-bottom: 0;
   color: var(--colour-text-soft);
   font-size: 0.78rem;
+}
+
+.meal-picker {
+  display: grid;
+  gap: var(--space-5);
+  padding: var(--space-5);
+}
+
+.meal-picker__paths {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.meal-picker__paths > button {
+  min-height: 4.75rem;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--colour-surface);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-md);
+  color: var(--colour-text-soft);
+  cursor: pointer;
+  text-align: left;
+}
+
+.meal-picker__paths > button.is-active {
+  background: var(--colour-primary-soft);
+  border-color: color-mix(in srgb, var(--colour-primary) 42%, var(--colour-border));
+  color: var(--colour-primary);
+}
+
+.meal-picker__paths span,
+.meal-picker__paths strong,
+.meal-picker__paths small {
+  display: block;
+}
+
+.meal-picker__paths strong {
+  color: var(--colour-text);
+}
+
+.meal-picker__paths small {
+  margin-top: var(--space-1);
+  color: var(--colour-text-faint);
+}
+
+.meal-picker__search {
+  width: 100%;
+  max-width: none;
+}
+
+.meal-picker__cuisine {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.meal-picker__cuisine h3,
+.meal-picker__cuisine p,
+.meal-picker__other h3,
+.meal-picker__other p,
+.meal-suggestion-card h3,
+.meal-suggestion-card p {
+  margin-bottom: 0;
+}
+
+.meal-picker__cuisine p,
+.meal-picker__other p,
+.meal-suggestion-card p {
+  margin-top: var(--space-1);
+  color: var(--colour-text-soft);
+  font-size: var(--font-size-label);
+}
+
+.meal-picker__intent-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--colour-surface-inset);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-md);
+}
+
+.meal-picker__intent-action p {
+  flex: 1 1 16rem;
+  margin: 0;
+}
+
+.meal-picker__results {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.meal-picker__inspiration {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+}
+
+.meal-picker__inspiration .meal-suggestion-card {
+  width: 100%;
+}
+
+.meal-suggestion-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.meal-suggestion-card__copy {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.meal-suggestion-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  color: var(--colour-text-faint);
+  font-size: var(--font-size-label);
+  font-weight: 620;
+}
+
+.meal-suggestion-card__meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.meal-suggestion-card__reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.meal-suggestion-card__reasons li {
+  padding: var(--space-1) var(--space-2);
+  background: var(--colour-sage-soft);
+  border-radius: var(--radius-pill);
+  color: var(--colour-sage);
+  font-size: var(--font-size-label);
+  font-weight: 650;
+}
+
+.meal-picker__other {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--colour-border);
+}
+
+.meal-picker__other-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.meal-picker__other-options button {
+  min-height: 4.75rem;
+  display: grid;
+  align-content: center;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--colour-surface);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius-md);
+  color: var(--colour-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.meal-picker__other-options span {
+  color: var(--colour-text-faint);
+  font-size: var(--font-size-label);
 }
 
 .recipe-form,
@@ -2862,9 +3129,51 @@ h3 {
 }
 
 @media (max-width: 42rem) {
+  .page-header--persistent,
+  .week-toolbar--persistent {
+    position: static;
+  }
+
+  .modal-backdrop {
+    place-items: end center;
+    padding: 0;
+  }
+
+  .modal-panel,
+  .modal-panel--wide {
+    width: 100%;
+    max-height: 94dvh;
+    border-bottom: 0;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+
+  .meal-picker__paths,
+  .meal-picker__other-options {
+    grid-template-columns: 1fr;
+  }
+
+  .meal-suggestion-card {
+    grid-template-columns: 1fr;
+  }
+
+  .meal-suggestion-card > .button {
+    width: 100%;
+  }
+
+  .meal-picker-trigger span {
+    display: none;
+  }
+
   .page-header {
+    width: 100%;
+    min-width: 0;
     display: grid;
     gap: var(--space-4);
+  }
+
+  .page-header > div,
+  .page-header__actions {
+    min-width: 0;
   }
 
   .page-header h1 {
@@ -2887,6 +3196,15 @@ h3 {
 
   .week-toolbar {
     align-items: flex-start;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .week-toolbar .metric-grid--inline {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
   }
 
   .week-toolbar > .button {
@@ -3039,6 +3357,17 @@ h3 {
 
   .filter-pills {
     justify-content: flex-start;
+  }
+
+  .cuisine-chips {
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: var(--space-1);
+  }
+
+  .cuisine-chips button {
+    flex: 0 0 auto;
   }
 
   .library-toolbar .filter-pills {

@@ -4,10 +4,11 @@ import {
   acceptReplenishmentSuggestion,
   buildReplenishmentSuggestions,
   buildShoppingList,
+  invalidateRecipeShoppingContributions,
   reconcileShoppingIngredient,
 } from './shopping';
 import { evaluateStockOnlyRecipe } from './stockPlanning';
-import type { HomeStockItem, Recipe } from './types';
+import type { HomeStockItem, Recipe, ShoppingItem } from './types';
 
 function stockItem(patch: Partial<HomeStockItem> = {}): HomeStockItem {
   return {
@@ -234,6 +235,70 @@ describe('buildShoppingList', () => {
     plan.slots.wednesday = { ...plan.slots.wednesday, kind: 'skip' };
 
     expect(buildShoppingList(plan, SEED_RECIPES)).toEqual([]);
+  });
+});
+
+describe('invalidateRecipeShoppingContributions', () => {
+  it('reduces a mixed recipe and accepted top-up row to its independent contribution', () => {
+    const mixedItem: ShoppingItem = {
+      id: 'shop-bananas',
+      name: 'bananas',
+      grossRecipeNeed: 8,
+      confirmedStockApplied: 2,
+      remainingBuyQuantity: 6,
+      unit: '',
+      category: 'produce' as const,
+      sources: ['recipe', 'stock-top-up'],
+      sourceRecipeIds: ['recipe-smoothie'],
+      sourceHomeStockItemIds: ['stock-bananas'],
+      stockTopUpQuantity: 4,
+      requiresReview: true,
+      checked: true,
+    };
+
+    expect(invalidateRecipeShoppingContributions([mixedItem])).toEqual([
+      {
+        ...mixedItem,
+        grossRecipeNeed: null,
+        confirmedStockApplied: 0,
+        remainingBuyQuantity: 4,
+        sources: ['stock-top-up'],
+        sourceRecipeIds: [],
+      },
+    ]);
+  });
+
+  it('preserves manual-only and stock-top-up-only rows exactly', () => {
+    const manualItem: ShoppingItem = {
+      id: 'shop-manual',
+      name: 'dishwasher tablets',
+      grossRecipeNeed: null,
+      confirmedStockApplied: 0,
+      remainingBuyQuantity: 1,
+      unit: 'pack',
+      category: 'other' as const,
+      sources: ['manual'],
+      sourceRecipeIds: [],
+      requiresReview: false,
+      checked: true,
+    };
+    const topUpItem: ShoppingItem = {
+      ...manualItem,
+      id: 'shop-top-up',
+      name: 'bananas',
+      remainingBuyQuantity: 6,
+      unit: '',
+      category: 'produce' as const,
+      sources: ['stock-top-up'],
+      sourceHomeStockItemIds: ['stock-bananas'],
+      stockTopUpQuantity: 6,
+      requiresReview: true,
+    };
+
+    expect(invalidateRecipeShoppingContributions([manualItem, topUpItem])).toEqual([
+      manualItem,
+      topUpItem,
+    ]);
   });
 });
 

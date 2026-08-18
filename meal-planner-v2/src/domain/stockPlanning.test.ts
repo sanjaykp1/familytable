@@ -250,4 +250,22 @@ describe('strict stock-only recipe eligibility', () => {
     ]);
     expect(inventory[0].quantity).toBe(100);
   });
+
+  it('does not overwrite an unresolved cuisine intention with a stock-only suggestion', () => {
+    const dinner = recipe('rice', 'Rice dinner', [ingredient('rice', 'Rice', 100)]);
+    const plan = createEmptyPlan('2026-08-17', 4);
+    plan.slots.monday = { ...plan.slots.monday, cuisineIntent: 'indian' };
+
+    const result = generateStockOnlyMealPlan(
+      plan,
+      [dinner],
+      [stock('stock-rice', 'Rice', 100)],
+      [],
+      '2026-08-17T09:00:00.000Z',
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.plan.slots.monday).toEqual(plan.slots.monday);
+    expect(result.plan.slots.tuesday.recipeId).toBe(dinner.id);
+  });
 });

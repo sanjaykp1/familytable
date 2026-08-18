@@ -1,8 +1,15 @@
 import { RepositoryError } from '../domain/errors';
-import { CATALOGUE_EXPANSION_RECIPES, createInitialState, SEED_RECIPES } from '../domain/seed';
+import {
+  BUNDLED_RECIPE_CUISINES,
+  CATALOGUE_EXPANSION_RECIPES,
+  createInitialState,
+  SEED_RECIPES,
+} from '../domain/seed';
 import type {
   AppState,
   CookAttention,
+  CuisineId,
+  CuisineIntentId,
   DayKey,
   HomeStockItem,
   Ingredient,
@@ -18,7 +25,12 @@ import type {
   ThemePreference,
   WeatherLocation,
 } from '../domain/types';
-import { CATEGORY_ORDER, DAY_KEYS } from '../domain/types';
+import {
+  CATEGORY_ORDER,
+  CUISINE_IDS,
+  CUISINE_INTENT_IDS,
+  DAY_KEYS,
+} from '../domain/types';
 import type { MealPlannerRepository } from './mealPlannerRepository';
 
 export interface StorageLike {
@@ -120,6 +132,7 @@ function normalizeIngredient(value: unknown): Ingredient {
 
 function normalizeRecipe(value: unknown, sourceVersion: number): Recipe {
   if (!isRecord(value)) throw new RepositoryError('A recipe in this backup is not valid.');
+  const id = requireString(value.id, 'a recipe ID');
   const seedRecipe =
     sourceVersion < 3 && typeof value.id === 'string'
       ? SEED_RECIPES.find((recipe) => recipe.id === value.id)
@@ -145,12 +158,21 @@ function normalizeRecipe(value: unknown, sourceVersion: number): Recipe {
     if (!isOneOf(season, SEASON_VALUES)) invalid('a recipe season');
     return season;
   });
-  const tags = requireArray(value.tags, 'recipe tags').map((tag) => requireString(tag, 'a recipe tag'));
+  const tags = requireArray(value.tags, 'recipe tags').map((tag) =>
+    requireString(tag, 'a recipe tag'),
+  );
+  const cuisine: CuisineId =
+    sourceVersion < 9
+      ? (BUNDLED_RECIPE_CUISINES[id] ?? 'uncategorised')
+      : isOneOf(value.cuisine, CUISINE_IDS)
+        ? value.cuisine
+        : invalid('a recipe cuisine');
 
   return {
-    id: requireString(value.id, 'a recipe ID'),
+    id,
     name: requireString(value.name, 'a recipe name'),
     description: requireString(value.description, 'a recipe description'),
+    cuisine,
     servings,
     prepMinutes: requireNumber(value.prepMinutes, 'recipe preparation minutes'),
     cookMinutes: requireNumber(value.cookMinutes, 'recipe cooking minutes'),
@@ -198,7 +220,7 @@ function normalizeWeatherLocation(value: unknown): WeatherLocation | null {
   };
 }
 
-function normalizeMealSlot(value: unknown): MealSlot {
+function normalizeMealSlot(value: unknown, sourceVersion: number): MealSlot {
   if (!isRecord(value)) invalid('a meal slot');
   const recipeId = value.recipeId;
   if (recipeId !== null && typeof recipeId !== 'string') invalid('a meal slot recipe ID');
@@ -213,23 +235,35 @@ function normalizeMealSlot(value: unknown): MealSlot {
       : value.lastCookedAtBeforeCooking === null
         ? null
         : requireString(value.lastCookedAtBeforeCooking, 'a previous recipe cooked date');
+  const kind = isOneOf(value.kind, MEAL_SLOT_KINDS) ? value.kind : 'recipe';
+  const cuisineIntent: CuisineIntentId | undefined =
+    sourceVersion < 9 || value.cuisineIntent === undefined
+      ? undefined
+      : isOneOf(value.cuisineIntent, CUISINE_INTENT_IDS)
+        ? value.cuisineIntent
+        : invalid('a meal slot cuisine intention');
+  const hasUnresolvedRecipe = kind === 'recipe' && recipeId === null;
+  const hasChosenRecipe = kind === 'recipe' && recipeId !== null;
   return {
-    recipeId,
-    kind: isOneOf(value.kind, MEAL_SLOT_KINDS) ? value.kind : 'recipe',
-    locked: value.locked,
+    recipeId: kind === 'recipe' ? recipeId : null,
+    kind,
+    ...(hasUnresolvedRecipe && cuisineIntent ? { cuisineIntent } : {}),
+    locked: hasChosenRecipe ? value.locked : false,
     servings,
-    ...(cookedAt === undefined ? {} : { cookedAt }),
-    ...(lastCookedAtBeforeCooking === undefined ? {} : { lastCookedAtBeforeCooking }),
+    ...(hasChosenRecipe && cookedAt !== undefined ? { cookedAt } : {}),
+    ...(hasChosenRecipe && lastCookedAtBeforeCooking !== undefined
+      ? { lastCookedAtBeforeCooking }
+      : {}),
   };
 }
 
-function normalizePlan(value: unknown): MealPlan {
+function normalizePlan(value: unknown, sourceVersion: number): MealPlan {
   if (!isRecord(value)) invalid('a meal plan');
   if (!isRecord(value.slots)) invalid('a meal plan');
   const slots = value.slots;
   if (value.status !== 'draft' && value.status !== 'ready') invalid('a meal plan status');
   const normalizedSlots = Object.fromEntries(
-    DAY_KEYS.map((day) => [day, normalizeMealSlot(slots[day])]),
+    DAY_KEYS.map((day) => [day, normalizeMealSlot(slots[day], sourceVersion)]),
   ) as Record<DayKey, MealSlot>;
   return {
     id: requireString(value.id, 'a meal plan ID'),
@@ -377,7 +411,8 @@ export function validateAndMigrate(value: unknown): AppState {
     value.schemaVersion !== 5 &&
     value.schemaVersion !== 6 &&
     value.schemaVersion !== 7 &&
-    value.schemaVersion !== 8
+    value.schemaVersion !== 8 &&
+    value.schemaVersion !== 9
   ) {
     throw new RepositoryError('This backup uses an unsupported data version.');
   }
@@ -392,7 +427,7 @@ export function validateAndMigrate(value: unknown): AppState {
     throw new RepositoryError('The backup is missing Home Stock items.');
   }
   return {
-    schemaVersion: 8,
+    schemaVersion: 9,
     recipes: addCatalogueExpansion(
       value.recipes.map((recipe) => normalizeRecipe(recipe, sourceVersion)),
       sourceVersion,
@@ -400,7 +435,7 @@ export function validateAndMigrate(value: unknown): AppState {
     plans: Object.fromEntries(
       Object.entries(value.plans).map(([weekStart, plan]) => [
         weekStart,
-        normalizePlan(plan),
+        normalizePlan(plan, sourceVersion),
       ]),
     ),
     shoppingLists: Object.fromEntries(

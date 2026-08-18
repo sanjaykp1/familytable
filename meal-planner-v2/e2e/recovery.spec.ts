@@ -62,10 +62,10 @@ test('recovers Home Stock, shopping, priority, and stock-only plan from a JSON b
   await expect(page.getByRole('heading', { name: 'Lemon salmon & new potatoes' })).toBeVisible();
   await dismissToasts(page);
   await page.getByRole('button', { name: 'Plan qualifying dinners' }).click();
-  await expect(page.getByLabel('Dinner for Mon')).not.toHaveValue('');
+  await expect(page.locator('#meal-monday')).not.toContainText('Choose a dinner');
 
   await page.reload();
-  await expect(page.getByLabel('Dinner for Mon')).not.toHaveValue('');
+  await expect(page.locator('#meal-monday')).not.toContainText('Choose a dinner');
   await openHomeStock(page);
   await expect(page.getByRole('heading', { name: 'bananas' })).toBeVisible();
   await expect(
@@ -104,5 +104,5 @@ test('recovers Home Stock, shopping, priority, and stock-only plan from a JSON b
   await page.getByRole('button', { name: 'To buy' }).click();
   await expect(page.getByText('bananas', { exact: true })).toBeVisible();
   await page.goto('/#/plan');
-  await expect(page.getByLabel('Dinner for Mon')).not.toHaveValue('');
+  await expect(page.locator('#meal-monday')).not.toContainText('Choose a dinner');
 });

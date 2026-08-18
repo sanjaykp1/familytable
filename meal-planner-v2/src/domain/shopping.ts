@@ -42,6 +42,46 @@ function stockCategory(item: HomeStockItem): IngredientCategory {
     : 'other';
 }
 
+/**
+ * Removes generated recipe data while retaining shopping reasons that exist independently of a
+ * meal plan. Passing recipe IDs limits invalidation to rows contributed to by those recipes;
+ * omitting them invalidates every recipe-derived row.
+ */
+export function invalidateRecipeShoppingContributions(
+  items: readonly ShoppingItem[] | undefined,
+  recipeIds?: readonly string[],
+): ShoppingItem[] {
+  const invalidRecipeIds = recipeIds ? new Set(recipeIds) : null;
+
+  return (items ?? []).flatMap((item) => {
+    if (!item.sources.includes('recipe')) return [item];
+    if (
+      invalidRecipeIds &&
+      !item.sourceRecipeIds.some((recipeId) => invalidRecipeIds.has(recipeId))
+    ) {
+      return [item];
+    }
+
+    const independentSources = item.sources.filter((source) => source !== 'recipe');
+    if (!independentSources.length) return [];
+
+    const remainingBuyQuantity = independentSources.includes('stock-top-up')
+      ? (item.stockTopUpQuantity ?? item.remainingBuyQuantity)
+      : item.remainingBuyQuantity;
+
+    return [
+      {
+        ...item,
+        grossRecipeNeed: null,
+        confirmedStockApplied: 0,
+        remainingBuyQuantity,
+        sources: independentSources,
+        sourceRecipeIds: [],
+      },
+    ];
+  });
+}
+
 export function buildReplenishmentSuggestions(
   homeStockItems: HomeStockItem[],
 ): ReplenishmentSuggestion[] {
