@@ -17,6 +17,17 @@ Then open the local URL printed by Vite.
 npm run check
 ```
 
+## Production release
+
+- Stable HTTPS URL: [https://family-table-1gb.pages.dev](https://family-table-1gb.pages.dev)
+- Immutable deployment URL: [https://e7280bfc.family-table-1gb.pages.dev](https://e7280bfc.family-table-1gb.pages.dev)
+- Deployed commit: `4b65c8a880863ff8b5fb40868123da2987d03a84`
+- Production branch: `main`; project root: `meal-planner-v2`; Node.js: `24`; build: `npm run build`; output: `dist`
+- Release gate: blocked because both production URLs currently return `index.html` with HTTP 200
+  for a missing JavaScript asset. Offline reload, recovery and Guided interaction checks passed.
+
+Release verification, rollback status, and the two-cycle trial are recorded in [`docs/DOGFOOD_LOG.md`](docs/DOGFOOD_LOG.md).
+
 ## MVP scope
 
 - Plan any week and move between weeks
@@ -40,6 +51,9 @@ The deferred capabilities have explicit architecture boundaries so they can be a
 
 ## Next MVP priority
 
-Home Stock, replenishment suggestions and stock-only planning are implemented. The current release work is to unify ingredient matching, add safe metric conversions, reserve stock for locked meals, harden browser backup/recovery, and then deploy one stable build for a two-cycle household trial.
+Home Stock, replenishment suggestions, stock-only planning and Guided meal inspiration are deployed.
+The active release blocker is production missing-asset handling; do not treat Guided P1 as fully
+released until a missing asset returns a non-HTML error response and both production URLs are
+reverified.
 
 See [`docs/BACKLOG.md`](docs/BACKLOG.md) for the maintained feature backlog and phased roadmap.
