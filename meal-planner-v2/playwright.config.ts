@@ -19,8 +19,12 @@ export default defineConfig({
     { name: 'webkit', use: { ...devices['Desktop Safari'] } },
   ],
   webServer: {
-    command: 'npm run build && npm run preview -- --host 127.0.0.1 --port 4173',
+    command: 'npm run build && npm run preview:pages',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: false,
+    env: {
+      ...process.env,
+      WRANGLER_LOG_PATH: '/tmp/family-table-wrangler.log',
+    },
   },
 });
