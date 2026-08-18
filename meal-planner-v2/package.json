@@ -15,7 +15,6 @@
     "build": "tsc -b && vite build",
     "build:companion": "npm run build --workspace @family-table/companion",
     "preview": "vite preview",
-    "preview:pages": "wrangler pages dev dist --ip 127.0.0.1 --port 4173 --compatibility-date 2026-08-18",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:companion": "npm run test --workspace @family-table/companion",
