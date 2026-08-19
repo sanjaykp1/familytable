@@ -20,11 +20,11 @@ npm run check
 ## Production release
 
 - Stable HTTPS URL: [https://family-table-1gb.pages.dev](https://family-table-1gb.pages.dev)
-- Immutable deployment URL: [https://e7280bfc.family-table-1gb.pages.dev](https://e7280bfc.family-table-1gb.pages.dev)
-- Deployed commit: `4b65c8a880863ff8b5fb40868123da2987d03a84`
+- Immutable deployment URL: [https://954c5ce5.family-table-1gb.pages.dev](https://954c5ce5.family-table-1gb.pages.dev)
+- Deployed commit: `1cff9d1b1091b8cf7d3109d5a8a2c6c65465abe3`
 - Production branch: `main`; project root: `meal-planner-v2`; Node.js: `24`; build: `npm run build`; output: `dist`
-- Release gate: blocked because both production URLs currently return `index.html` with HTTP 200
-  for a missing JavaScript asset. Offline reload, recovery and Guided interaction checks passed.
+- Release gate: passed. Both production URLs return a plain-text HTTP 404 for a missing JavaScript
+  asset and passed normal load, offline reload, JSON recovery and Guided interaction checks.
 
 Release verification, rollback status, and the two-cycle trial are recorded in [`docs/DOGFOOD_LOG.md`](docs/DOGFOOD_LOG.md).
 
@@ -52,8 +52,7 @@ The deferred capabilities have explicit architecture boundaries so they can be a
 ## Next MVP priority
 
 Home Stock, replenishment suggestions, stock-only planning and Guided meal inspiration are deployed.
-The active release blocker is production missing-asset handling; do not treat Guided P1 as fully
-released until a missing asset returns a non-HTML error response and both production URLs are
-reverified.
+The production missing-asset blocker is cleared and Guided P1 is released. This release did not
+start Spice cabinet or Oda work.
 
 See [`docs/BACKLOG.md`](docs/BACKLOG.md) for the maintained feature backlog and phased roadmap.

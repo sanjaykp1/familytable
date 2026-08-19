@@ -1,12 +1,12 @@
 # Family Table — two-cycle dogfood log
 
-Status: Guided candidate deployed; release gate blocked; Cycle 1 remains incomplete
+Status: Guided P1 released; Cycle 1 remains incomplete
 
 Stable production URL: https://family-table-1gb.pages.dev
 
-Deployed commit: `4b65c8a880863ff8b5fb40868123da2987d03a84`
+Deployed commit: `1cff9d1b1091b8cf7d3109d5a8a2c6c65465abe3`
 
-Immutable deployment URL: https://e7280bfc.family-table-1gb.pages.dev
+Immutable deployment URL: https://954c5ce5.family-table-1gb.pages.dev
 
 Trial start: 2026-08-16
 
@@ -69,6 +69,45 @@ Trial end: _after Cycle 2_
   meaning the HTML shell was served for an asset request. Guided P1 is not fully released.
 - Rollback: not performed. The confirmed rollback target returns the same missing-asset response,
   so rollback would not remediate the blocker.
+
+## Guided missing-asset release unblocker — 19 August 2026
+
+- Candidate: `ab6b03a0766d9e7fd057a683b3238acf6fa8c582`; the prior local evidence commit
+  `dd7a831b4da30bfcf967316dc36f4353fc425150` was included in the same release PR as patch-equivalent
+  commit `29864bc9062175b96404f9e6ebb8838c6e452027`.
+- Release: PR #2 passed its required CI check and merged as
+  `1cff9d1b1091b8cf7d3109d5a8a2c6c65465abe3`.
+- Deployment: `954c5ce5-1e25-4dda-a86f-8a4923a28b71`, successful at
+  2026-08-18T21:02:51.130958Z with `main`, the exact merge commit, `commit_dirty: false` and Pages
+  Functions enabled.
+- Immutable URL: https://954c5ce5.family-table-1gb.pages.dev
+- Stable URL: https://family-table-1gb.pages.dev
+- Pre-release production backup: the stable-origin UI export completed at
+  2026-08-18 14:46:48 CEST. The retained local file is 41,857 bytes with SHA-256
+  `9d8f3d81a93183a4e58cc3ee62cae5c05dbefaf8f4894647433b30fe48fa246a`; its household contents
+  were not inspected or recorded here.
+- Pre-release production record: deployment `e7280bfc-0d16-45c5-a1b8-c27e5773946e`, commit
+  `4b65c8a880863ff8b5fb40868123da2987d03a84`, was the current successful deployment. The recorded
+  rollback target was `a2f02fd2-dbf7-4b39-966c-49c16d54f4b2`; it was not used because it shared
+  the routing defect. After this successful release, `e7280bfc-0d16-45c5-a1b8-c27e5773946e` is the
+  immediately previous successful deployment for unrelated rollback needs.
+- Local gate: `git diff --check` passed; `npm run check` passed with 132 app tests, 10 companion
+  tests, both builds and 12 Playwright cases. Independent fresh-session QA reran the exact
+  candidate and reported no stop-ship findings. PR #2 CI passed its single required check.
+- Live normal load: the immutable and stable URLs loaded without captured console or page errors,
+  installed and controlled their service workers, and remained on the app shell during valid hash
+  navigation.
+- Live offline/recovery: both URLs retained synthetic persisted data through an actual
+  network-disabled reload, remained interactive, and passed UI JSON export/reset/import recovery
+  using real browser storage.
+- Live Guided flow: both URLs passed the mixed-certainty acceptance flow at 320 px, including
+  keyboard opening, Escape/focus return, 44 px controls and no horizontal overflow. Monday and
+  Wednesday were preserved, Tuesday satisfied its Indian intention, and the unresolved intention
+  contributed no shopping items.
+- Missing assets: `/assets/definitely-missing-guided-release.js` returned HTTP 404 with
+  `text/plain` and `Not Found` rather than `index.html` on both URLs.
+- Release decision: the missing-asset gate is cleared and Guided P1 is released. No rollback and no
+  second Pages deployment were performed. Spice cabinet and Oda were not started.
 
 Use the deployed production URL as the only planning copy during the trial. Record a short factual entry when something happens more than once. If a category has no observations during a cycle, write `None observed` so absence is explicit.
 
