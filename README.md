@@ -35,11 +35,11 @@ The MVP is local-first. Browser storage is not a remote backup, so export a JSON
 ## Production release
 
 - Stable HTTPS URL: [https://family-table-1gb.pages.dev](https://family-table-1gb.pages.dev)
-- Immutable deployment URL: [https://e7280bfc.family-table-1gb.pages.dev](https://e7280bfc.family-table-1gb.pages.dev)
-- Deployed commit: `4b65c8a880863ff8b5fb40868123da2987d03a84`
+- Immutable deployment URL: [https://954c5ce5.family-table-1gb.pages.dev](https://954c5ce5.family-table-1gb.pages.dev)
+- Deployed commit: `1cff9d1b1091b8cf7d3109d5a8a2c6c65465abe3`
 - Production branch: `main`; project root: `meal-planner-v2`; Node.js: `24`; build: `npm run build`; output: `dist`
-- Release gate: blocked because missing JavaScript assets currently receive the HTML shell from
-  both production URLs. Offline reload, JSON recovery and Guided interaction checks passed.
+- Release gate: passed. Both production URLs return a plain-text HTTP 404 for a missing JavaScript
+  asset and passed normal load, offline reload, JSON recovery and Guided interaction checks.
 
 See [`meal-planner-v2/docs/DOGFOOD_LOG.md`](meal-planner-v2/docs/DOGFOOD_LOG.md) for release verification, rollback status, and the two-cycle trial.
 

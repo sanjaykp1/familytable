@@ -1,6 +1,6 @@
 # Guided meal inspiration — UX and delivery plan
 
-Updated: 18 August 2026
+Updated: 19 August 2026
 
 Implementation is coordinated through
 [MULTI_AGENT_COORDINATION_PLAN.md](./MULTI_AGENT_COORDINATION_PLAN.md). One integration coordinator
@@ -11,7 +11,7 @@ merged and file ownership is exclusive.
 Sol/high, bounded recipe and picker UI work uses `gpt-5.6-terra`/high, and independent final QA uses
 Sol/xhigh.
 
-## Delivery status — 18 August 2026
+## Delivery status — 19 August 2026
 
 The product owner selected Guided meal inspiration as the first P1 workstream and kept Spice
 cabinet serialized behind it. Gate A and all three delivery slices are complete locally:
@@ -28,30 +28,34 @@ cabinet serialized behind it. Gate A and all three delivery slices are complete 
 - the mixed-certainty acceptance flow passes at 320 px in Chromium, Firefox and WebKit, including
   keyboard opening, Escape and focus return.
 
-Independent fresh-session integrated QA passed. The reviewed change commit
+Independent fresh-session integrated QA passed. The reviewed Guided change commit
 `56e2059e5995bb0076e6dde31b1bd65daf1f4995` was merged through PR #1 after CI passed, producing
-production commit `4b65c8a880863ff8b5fb40868123da2987d03a84`. Cloudflare deployment
-`e7280bfc-0d16-45c5-a1b8-c27e5773946e` completed successfully at
-https://e7280bfc.family-table-1gb.pages.dev.
+commit `4b65c8a880863ff8b5fb40868123da2987d03a84`. Its first production deployment exposed the
+missing-asset routing blocker described below.
 
-The immutable and stable URLs both passed normal load with no captured console errors, service
+The routing release candidate `ab6b03a0766d9e7fd057a683b3238acf6fa8c582` passed a second
+independent fresh-session review, `git diff --check`, the full local quality gate and PR #2 CI.
+PR #2 merged as `1cff9d1b1091b8cf7d3109d5a8a2c6c65465abe3`. Cloudflare deployment
+`954c5ce5-1e25-4dda-a86f-8a4923a28b71` completed successfully with Functions enabled at
+https://954c5ce5.family-table-1gb.pages.dev.
+
+The new immutable and stable URLs both passed normal load with no captured console errors, service
 worker installation/control, a real network-disabled reload with persisted interactive data,
-JSON export/reset/import recovery, and the Guided mixed-certainty flow at 320 px with keyboard,
-Escape/focus return and 44 px controls. Monday and Wednesday remained unchanged; Tuesday received
-an Indian recipe, reopened with Indian alternatives and visible reasons; the unresolved intention
-created no shopping list.
+UI JSON export/reset/import recovery using real browser storage, and the Guided mixed-certainty
+flow at 320 px with keyboard, Escape/focus return and 44 px controls. Monday and Wednesday remained
+unchanged; Tuesday received an Indian recipe, reopened with Indian alternatives and visible
+reasons; the unresolved intention created no shopping list.
 
-Guided P1 is still release-blocked because a deliberately missing JavaScript asset returns HTTP
-200 with `text/html` on both production URLs. This violates the offline prerequisite's
-missing-asset criterion. The confirmed rollback target has the same response behavior, so no
-rollback was performed. Do not start Spice cabinet or the Oda gate as a concurrent writable schema
-branch while this release remains blocked.
+A deliberately missing JavaScript asset returned HTTP 404 with `text/plain` and body `Not Found`
+on both production URLs. Valid hash navigation continued loading the app shell. Guided P1 is
+therefore released and the missing-asset gate is cleared. No rollback was performed, and this
+release did not start Spice cabinet or the Oda gate.
 
 Gate 0 is complete by explicit product-owner override. The remaining two-cycle dogfood and
 deployed manual-recovery evidence requirements are waived, not passed. A separate confirmed P0
 offline-reload defect was fixed on `main`; its production-build acceptance scenario passes in
-Chromium, Firefox and WebKit. Live offline verification now passes against both production URLs,
-but production missing-asset routing remains a separate release blocker.
+Chromium, Firefox and WebKit. Live offline and missing-asset verification now pass against both
+production URLs.
 
 Gate A froze these additional invariants:
 
